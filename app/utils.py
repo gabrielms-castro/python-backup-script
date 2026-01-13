@@ -25,27 +25,39 @@ def search_for_files(src):
 
     return files_info
 
-
-def get_files_older_than_n_days(nth_day: int, files: list[dict]) -> list:
+def generate_n_days_array(n: int) -> list:
     today = datetime.now().date()
-    last_n_days = [str(today - timedelta(days=i)) for i in range(nth_day - 1, -1, -1)]
-    print("\n", last_n_days)
-    files_over_nth_day = []
+    last_n_days = [str(today - timedelta(days=i)) for i in range(n - 1, -1, -1)]
+    return last_n_days
+
+def get_files_older_than_n_days(last_n_days: list, files: list[dict]) -> list:
+    if not last_n_days:
+        raise Exception("Last 'n' days array is required")
+    
+    files_older_than_n_days = []
     for _file in files:
         file_date = _file["created_at"].date().strftime("%Y-%m-%d")
         if file_date not in last_n_days:
-            files_over_nth_day.append(file_date)
+            files_older_than_n_days.append(_file['filepath'])
     
-    return files_over_nth_day
+    return files_older_than_n_days
 
-def get_files_within_last_n_days():
-    # TODO - fix function signature
-    ...
+def get_files_within_last_n_days(last_n_days: list, files: list[dict]) -> list:
+    if not last_n_days:
+        raise Exception("Last 'n' days array is required")
+    
+    files_within_last_n_days = []
+    for _file in files:
+        file_date = _file["created_at"].date().strftime("%Y-%m-%d")
+        if file_date in last_n_days:
+            files_within_last_n_days.append(_file['filepath'])
+    
+    return files_within_last_n_days
     
 def is_file_backed_up(filepath, dest) -> bool:
     # for checking if the file is already backed up on the destination server (back up server)
     ...
 
+def establish_connection():
+    ...
 
-
-    
