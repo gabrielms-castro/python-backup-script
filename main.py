@@ -7,7 +7,7 @@ from pathlib import Path
 
 from utils import (
     search_for_files,
-    get_files_over_nth_day
+    get_files_older_than_n_days
 )
 
 now = datetime.now()
@@ -34,7 +34,7 @@ def main():
         files = search_for_files(BACKUP_PATH_DEV)
         print(files)
 
-        dates = get_files_over_nth_day(nth_day=7, files=files)
+        dates = get_files_older_than_n_days(nth_day=7, files=files)
         print("\n", dates)
         os.chdir(BACKUP_PATH_DEV)
 

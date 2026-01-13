@@ -26,7 +26,7 @@ def search_for_files(src):
     return files_info
 
 
-def get_files_over_nth_day(nth_day: int, files: list[dict]) -> list:
+def get_files_older_than_n_days(nth_day: int, files: list[dict]) -> list:
     today = datetime.now().date()
     last_n_days = [str(today - timedelta(days=i)) for i in range(nth_day - 1, -1, -1)]
     print("\n", last_n_days)
@@ -37,6 +37,10 @@ def get_files_over_nth_day(nth_day: int, files: list[dict]) -> list:
             files_over_nth_day.append(file_date)
     
     return files_over_nth_day
+
+def get_files_within_last_n_days():
+    # TODO - fix function signature
+    ...
     
 def is_file_backed_up(filepath, dest) -> bool:
     # for checking if the file is already backed up on the destination server (back up server)
