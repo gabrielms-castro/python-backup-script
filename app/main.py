@@ -2,14 +2,22 @@ import logging
 import os
 import sys
 
-from config import DEST_PATH, LOGS_DIR, NOW, SOURCE_PATH
-from utils import (
-    copy_files,
+from backup import run_backup
+from config import (
+    BACKUP_DAYS,
+    DEST_PATH,
+    LOGS_DIR,
+    NOW,
+    PORT,
+    SOURCE_PATH,
+    SSH_PASSWORD,
+    SSH_SERVER,
+    SSH_USER,
 )
+from ssh_client import create_ssh_client
 
 
 def main():
-
 
     logging.basicConfig(
         level=logging.INFO,
@@ -20,19 +28,40 @@ def main():
         style="{",
         datefmt="%Y-%m-%d",
     )
+
     logging.info("Backup script started")
+
+    ssh_client = None
 
     try:
         os.makedirs(LOGS_DIR, exist_ok=True)
-        os.makedirs(DEST_PATH, exist_ok=True)
 
-        copy_files(SOURCE_PATH, DEST_PATH)
+        ssh_client = create_ssh_client(
+            server=SSH_SERVER,
+            port=PORT,
+            user=SSH_USER,
+            password=SSH_PASSWORD
+        )
+
+        run_backup(
+            ssh_client=ssh_client,
+            ssh_user=SSH_USER,
+            src_path=SOURCE_PATH,
+            dest_path=DEST_PATH,
+            backup_days=BACKUP_DAYS
+        )
 
     except Exception as e:
         logging.error(e)
-        sys.exit(1)
 
-    logging.info("Backup script finished")
+    finally:
+        if ssh_client:
+            ssh_client.close()
+            logging.info("Closed SSH connection")
+
+        logging.info("Backup script finished")
+        logging.info(f"{'#' * 100}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
