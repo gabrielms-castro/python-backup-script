@@ -2,6 +2,18 @@ import logging
 import os
 import sys
 
+# ===== FIX PARA PYINSTALLER =====
+# Garante que a pasta 'app' esteja no path tanto rodando como .py quanto como binário
+if getattr(sys, 'frozen', False):
+    # Rodando como binário (PyInstaller)
+    application_path = sys._MEIPASS
+else:
+    # Rodando como script Python
+    application_path = os.path.dirname(os.path.abspath(__file__))
+
+sys.path.insert(0, application_path)
+# ================================
+
 from backup import run_backup
 from config import (
     BACKUP_DAYS,

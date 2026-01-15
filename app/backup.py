@@ -25,7 +25,7 @@ def run_backup(ssh_client, ssh_user, src_path, dest_path, backup_days):
         database=PG_DB_NAME,
         user=PG_USER,
         password=PG_PASSWORD,
-        output_file=f"{src_path}/backup_{NOW.strftime("%Y%m%d_%H%M%S")}.sql"
+        output_file=f"{src_path}/backup_{NOW.strftime('%Y%m%d_%H%M%S')}.sql"
     )
     
     if not make_backup_file:
