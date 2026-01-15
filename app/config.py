@@ -24,6 +24,7 @@ PORT = os.getenv("PORT").strip()
 
 # PostgreSQL Variables
 PG_HOST = os.getenv("PG_HOST")
+PG_DB_NAME = os.getenv("PG_DB_NAME")
 PG_PORT = os.getenv("PG_PORT")
 DB_NAME = os.getenv("DB_NAME")
 PG_USER = os.getenv("PG_USER")

@@ -9,9 +9,9 @@ def get_datetime(filename):
         return None
 
     try:
-        date_string = f"{splited[1]} {splited[2].replace('.txt', '')}"
+        date_string = f"{splited[1]} {splited[2].replace('.sql', '')}"
         return datetime.strptime(date_string, "%Y%m%d %H%M%S")
-    
+
     except ValueError as exc:
         logging.warning(f"Invalid datetime format in {filename}: {exc}")
         return None

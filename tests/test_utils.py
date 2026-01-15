@@ -7,6 +7,10 @@ from app.utils import (
     get_files_within_last_n_days,
 )
 
+"""
+Tests were written with .txt extension but this will be used to parse .sql documents
+"""
+
 
 class TestUtils(unittest.TestCase):
     def test_get_files_older_than_n_days_1(self):

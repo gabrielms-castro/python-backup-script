@@ -2,23 +2,37 @@ import logging
 import os
 
 from directory_cleaner import remote_dir_cleaner, source_dir_cleaner
+from generate_backup import pg_dump_database
 from scp import SCPClient
 from utils import (
     generate_n_days_array,
     get_datetime,
     get_file_name,
+    is_file_backed_up,
     search_for_files_ssh_server,
-    is_file_backed_up
 )
+
+from config import NOW, PG_DB_NAME, PG_HOST, PG_PASSWORD, PG_PORT, PG_USER
 
 
 def run_backup(ssh_client, ssh_user, src_path, dest_path, backup_days):
     ensure_dest_path(ssh_client, ssh_user, dest_path)
 
     last_n_days_array = generate_n_days_array(backup_days)
-
+    make_backup_file = pg_dump_database(
+        host=PG_HOST,
+        port=PG_PORT,
+        database=PG_DB_NAME,
+        user=PG_USER,
+        password=PG_PASSWORD,
+        output_file=f"{src_path}/backup_{NOW.strftime("%Y%m%d_%H%M%S")}.sql"
+    )
+    
+    if not make_backup_file:
+        raise Exception("Backup generation failed.")
+    
     src_files = search_for_backup_files(src_path)
-    print(src_files)
+
     copy_files(ssh_client, src_files, dest_path)
 
     remote_dir_cleaner(ssh_client, last_n_days_array, dest_path)

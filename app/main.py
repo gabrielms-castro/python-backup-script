@@ -13,6 +13,7 @@ from config import (
     SSH_PASSWORD,
     SSH_SERVER,
     SSH_USER,
+    PUB_KEY_PATH
 )
 from ssh_client import create_ssh_client
 
@@ -40,7 +41,8 @@ def main():
             server=SSH_SERVER,
             port=PORT,
             user=SSH_USER,
-            password=SSH_PASSWORD
+            # password=SSH_PASSWORD,
+            key_filepath=PUB_KEY_PATH
         )
 
         run_backup(

@@ -6,7 +6,7 @@ authors = [
     {name = "gabrielms-castro",email = "gabriel.castro@phddobrasil.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.12, <4.0"
+requires-python = ">=3.12,<3.15"
 dependencies = [
     "python-dotenv (>=1.2.1,<2.0.0)",
     "paramiko (>=4.0.0,<5.0.0)",
@@ -21,7 +21,8 @@ build-backend = "poetry.core.masonry.api"
 [dependency-groups]
 dev = [
     "ruff (>=0.14.11,<0.15.0)",
-    "taskipy (>=1.14.1,<2.0.0)"
+    "taskipy (>=1.14.1,<2.0.0)",
+    "pyinstaller (>=6.18.0,<7.0.0)"
 ]
 
 [tool.ruff]
@@ -75,3 +76,4 @@ pre_format = 'ruff check --fix'
 format = 'ruff format'
 run = 'python3 app/main.py'
 test = 'python3 -m unittest discover -s tests'
+build = 'pyinstaller -F -n datatabase_backup_script app/main.py'
