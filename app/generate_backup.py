@@ -1,6 +1,5 @@
 import logging
 import subprocess
-from datetime import datetime
 
 
 def pg_dump_database(
@@ -13,7 +12,6 @@ def pg_dump_database(
 ) -> bool:
 
     try:
-        # Monta o comando
         cmd = [
             "pg_dump",
             f"--host={host}",
@@ -25,10 +23,8 @@ def pg_dump_database(
             "--verbose"
         ]
 
-        # Define a senha via variável de ambiente (mais seguro que passar na linha de comando)
         env = {"PGPASSWORD": password}
 
-        # Executa
         result = subprocess.run(
             cmd,
             env=env,
@@ -43,11 +39,7 @@ def pg_dump_database(
     except subprocess.CalledProcessError as e:
         logging.error(f"[FAIL] pg_dump failed: {e.stderr}")
         return False
+
     except Exception as e:
         logging.error(f"[ERROR] Exception during pg_dump: {e}")
         return False
-
-
-# Uso:
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-output_file = f"/srv/test_app/backup/db_backup_{timestamp}.dump"
