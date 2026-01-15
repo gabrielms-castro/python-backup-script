@@ -20,6 +20,7 @@ from ssh_client import create_ssh_client
 
 def main():
 
+    os.makedirs(LOGS_DIR, exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         filename=f"{LOGS_DIR}/backup_script_{NOW.date()}.log",
@@ -35,7 +36,6 @@ def main():
     ssh_client = None
 
     try:
-        os.makedirs(LOGS_DIR, exist_ok=True)
 
         ssh_client = create_ssh_client(
             server=SSH_SERVER,
