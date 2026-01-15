@@ -28,7 +28,7 @@ def main():
         filemode="a",
         format="{asctime} - {levelname} - {message}",
         style="{",
-        datefmt="%Y-%m-%d",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     logging.info("Backup script started")

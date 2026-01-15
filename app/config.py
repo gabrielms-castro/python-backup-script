@@ -8,13 +8,11 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 NOW = datetime.now()
-
+ENVIRONMENT = os.getenv("ENVIRONMENT")
 BACKUP_DAYS = int(os.getenv("BACKUP_DAYS"))
-
-SOURCE_PATH = Path(os.environ.get("SOURCE_PATH")) if os.getenv("ENVIRONMENT") != "dev" else Path("/srv/test_app/backup")
+SOURCE_PATH = Path(os.environ.get("SOURCE_PATH")) if ENVIRONMENT != "dev" else Path("/srv/test_app/backup")
 DEST_PATH = Path(os.environ.get("DEST_PATH"))
-LOGS_DIR = BASE_DIR / "logs"
-
+LOGS_DIR = Path(os.environ.get("LOGS_DIR")) if ENVIRONMENT != "dev" else BASE_DIR / "logs"
 SSH_USER = os.getenv("SSH_USER").strip()
 SSH_PASSWORD = os.getenv("SSH_PASSWORD").strip()
 SSH_SERVER = os.getenv("SSH_SERVER").strip()
