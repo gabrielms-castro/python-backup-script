@@ -8,7 +8,7 @@ from app.utils import (
 )
 
 """
-Tests were written with .txt extension but this will be used to parse .sql documents
+Tests were written with .txt extension but this will be used to parse .sql documents.
 """
 
 
