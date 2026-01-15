@@ -69,7 +69,7 @@ def source_delete_file(src_filepath):
         os.remove(src_filepath)
         logging.info(f"\t[OK] source file deleted: {filename}")
     except Exception:
-        logging.error(f"\t[FAIL] Source file cannot be deleted: {src_filepath["filepath"]}")
+        logging.error(f"\t[FAIL] Source file cannot be deleted: {src_filepath['filepath']}")
 
 
 def source_dir_cleaner(ssh_client, src_files, dest_path):

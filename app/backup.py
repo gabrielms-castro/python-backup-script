@@ -1,6 +1,7 @@
 import logging
 import os
 
+from config import NOW, PG_DB_NAME, PG_HOST, PG_PASSWORD, PG_PORT, PG_USER
 from directory_cleaner import remote_dir_cleaner, source_dir_cleaner
 from generate_backup import pg_dump_database
 from scp import SCPClient
@@ -11,8 +12,6 @@ from utils import (
     is_file_backed_up,
     search_for_files_ssh_server,
 )
-
-from config import NOW, PG_DB_NAME, PG_HOST, PG_PASSWORD, PG_PORT, PG_USER
 
 
 def run_backup(ssh_client, ssh_user, src_path, dest_path, backup_days):
@@ -27,10 +26,10 @@ def run_backup(ssh_client, ssh_user, src_path, dest_path, backup_days):
         password=PG_PASSWORD,
         output_file=f"{src_path}/backup_{NOW.strftime('%Y%m%d_%H%M%S')}.sql"
     )
-    
+
     if not make_backup_file:
         raise Exception("Backup generation failed.")
-    
+
     src_files = search_for_backup_files(src_path)
 
     copy_files(ssh_client, src_files, dest_path)

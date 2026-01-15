@@ -21,11 +21,10 @@ from config import (
     LOGS_DIR,
     NOW,
     PORT,
+    PUB_KEY_PATH,
     SOURCE_PATH,
-    SSH_PASSWORD,
     SSH_SERVER,
     SSH_USER,
-    PUB_KEY_PATH
 )
 from ssh_client import create_ssh_client
 
