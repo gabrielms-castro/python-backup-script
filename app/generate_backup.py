@@ -19,7 +19,7 @@ def pg_dump_database(
             f"--username={user}",
             f"--dbname={database}",
             f"--file={output_file}",
-            "--format=custom",
+            "--format=plain",
             "--verbose"
         ]
 
