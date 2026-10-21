@@ -40,6 +40,9 @@ _invalid_targets = set(BACKUP_TARGETS) - {"ssh", "s3"}
 if _invalid_targets or not BACKUP_TARGETS:
     raise ValueError(f"Invalid BACKUP_TARGETS: {_env('BACKUP_TARGETS')}")
 
+# Monitoring (Healthchecks.io); empty = disabled
+HEALTHCHECK_URL = _env("HEALTHCHECK_URL")
+
 # AWS S3 Variables
 S3_BUCKET = _env("S3_BUCKET")
 S3_PREFIX = _env("S3_PREFIX", "")

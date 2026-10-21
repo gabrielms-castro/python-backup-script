@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import socket
@@ -27,6 +28,7 @@ from config import (
     COMPRESS_BACKUP,
     DB_ENGINE,
     DEST_PATH,
+    HEALTHCHECK_URL,
     LOGS_DIR,
     NOW,
     PUB_KEY_PATH,
@@ -37,6 +39,7 @@ from config import (
     SSH_SERVER,
     SSH_USER,
 )
+from healthcheck import ping
 from logger import log_event, setup_logging
 from s3_client import create_s3_client
 from ssh_client import create_ssh_client
@@ -63,11 +66,13 @@ def main():
         host=socket.gethostname(),
         pid=os.getpid(),
     )
+    ping(HEALTHCHECK_URL, "start")
 
     ssh_client = None
     s3_client = None
     exit_code = 0
     summary = {}
+    last_error = None
 
     try:
 
@@ -107,9 +112,10 @@ def main():
             summary=summary
         )
 
-    except Exception:
+    except Exception as exc:
         log_event(logger, "run.failed", logging.ERROR, exc_info=True)
         exit_code = 1
+        last_error = str(exc)
 
     finally:
         if ssh_client:
@@ -132,6 +138,16 @@ def main():
             logger, "run.finished",
             logging.INFO if status == "success" else logging.ERROR,
             **result
+        )
+
+        # partial counts as failure, same as the exit code
+        ping(
+            HEALTHCHECK_URL,
+            "" if status == "success" else "fail",
+            body=json.dumps(
+                {"run_id": run_id, **result, "error": last_error},
+                default=str
+            )
         )
 
     sys.exit(exit_code)
