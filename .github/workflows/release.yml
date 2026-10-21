@@ -1,17 +1,32 @@
 name: release
 
-# Builds the PyInstaller binary and publishes it on a GitHub Release
-# when a version tag is pushed: git tag v0.3.0 && git push origin v0.3.0
+# Builds the PyInstaller binary and attaches it to the GitHub Release of a
+# version tag. Runs when:
+# - a tag is pushed: git tag v0.3.0 && git push origin v0.3.0
+# - a release is published on the GitHub UI
+# - started by hand (Actions > release > Run workflow) for an existing tag
 on:
   push:
     tags:
       - "v*"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build (e.g. v0.3.0)"
+        required: true
 
 permissions:
   contents: read
 
 env:
   ASSET_NAME: backup_v2-linux-x86_64
+  TAG: ${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
+
+# Pushing a tag and publishing its release must not upload twice at once
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
 
 jobs:
   build:
@@ -21,6 +36,8 @@ jobs:
     container: python:3.12-bullseye
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
 
       - name: Install uv
         run: pip install --no-cache-dir "uv>=0.5,<1.0"
@@ -28,8 +45,8 @@ jobs:
       - name: Check tag matches pyproject version
         run: |
           version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
-          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match pyproject version $version" >&2
+          if [ "$TAG" != "v$version" ]; then
+            echo "Tag $TAG does not match pyproject version $version" >&2
             exit 1
           fi
 
@@ -84,13 +101,18 @@ jobs:
         with:
           name: binary
 
-      - name: Create GitHub Release
+      - name: Publish assets on the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            --verify-tag \
-            "$ASSET_NAME" "$ASSET_NAME.sha256"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+              "$ASSET_NAME" "$ASSET_NAME.sha256"
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" \
+              --generate-notes \
+              --verify-tag \
+              "$ASSET_NAME" "$ASSET_NAME.sha256"
+          fi

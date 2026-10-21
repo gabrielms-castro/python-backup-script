@@ -398,7 +398,12 @@ git tag v0.3.0
 git push origin main v0.3.0
 ```
 
+Também funciona criando a release pela interface do GitHub (**Releases > Draft a new release**, com a tag `v0.3.0`):
+ao publicar, o workflow gera o binário e anexa na release. Para gerar de novo o binário de uma tag que já existe:
+**Actions > release > Run workflow**, informando a tag (ou `gh workflow run release.yml -f tag=v0.3.0`).
+
 Acompanhe em **Actions**. Se a tag não bater com a versão do `pyproject.toml`, o workflow falha antes do build.
+A release só tem o binário depois que o workflow termina; o link de download aparece em **Assets**.
 
 ## Restauração
 
