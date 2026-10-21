@@ -9,7 +9,7 @@ def get_datetime(filename):
         return None
 
     try:
-        date_string = f"{splited[1]} {splited[2].replace('.sql', '')}"
+        date_string = f"{splited[1]} {splited[2].split('.', 1)[0]}"
         return datetime.strptime(date_string, "%Y%m%d %H%M%S")
 
     except ValueError as exc:
@@ -44,6 +44,9 @@ def get_files_older_than_n_days(last_n_days: list, files: list[dict]) -> list:
 
     files_older_than_n_days = []
     for _file in files:
+        if not _file["created_at"]:
+            continue
+
         file_date = _file["created_at"].date().strftime("%Y-%m-%d")
         if file_date not in last_n_days:
             files_older_than_n_days.append(_file['filepath'])
