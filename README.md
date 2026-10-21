@@ -318,7 +318,21 @@ O script roda no **servidor do banco** (é lá que o `pg_dump`/`gbak` gera o arq
 
 **Opção A: binário (não precisa de Python no servidor)**
 
-Gere o binário numa máquina com a mesma distribuição Linux do servidor (ou mais antiga, por causa da glibc):
+Baixe o binário da [última release](https://github.com/gabrielms-castro/python-backup-script/releases/latest).
+Ele é gerado com glibc 2.31 e roda em Linux x86_64 com glibc igual ou mais nova (Debian 11+, Ubuntu 20.04+, RHEL 9+;
+confira com `ldd --version`):
+
+```bash
+mkdir -p /opt/backup_script && cd /opt/backup_script
+base=https://github.com/gabrielms-castro/python-backup-script/releases/latest/download
+curl -fsSLO "$base/backup_v2-linux-x86_64" -O "$base/backup_v2-linux-x86_64.sha256"
+sha256sum -c backup_v2-linux-x86_64.sha256
+mv backup_v2-linux-x86_64 backup_v2 && chmod +x backup_v2
+```
+
+Para fixar uma versão, troque `latest/download` por `download/v0.3.0`. Para atualizar, repita os comandos (o `.env` não é alterado).
+
+Para gerar o binário localmente, use uma máquina com glibc igual ou mais antiga que a do servidor:
 
 ```bash
 uv sync
@@ -370,6 +384,21 @@ Com a opção B, use o caminho absoluto do `uv` (o cron tem um `PATH` reduzido; 
 ```cron
 0 2 * * * cd /opt/backup_script && /home/<usuario>/.local/bin/uv run python app/main.py
 ```
+
+## Publicar uma release
+
+O workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) roda quando uma tag `v*` é enviada:
+roda os testes, gera o binário num container Debian bullseye (glibc 2.31), faz um smoke test e publica
+`backup_v2-linux-x86_64` e o `.sha256` na release.
+
+```bash
+# 1. atualize "version" no pyproject.toml (a tag precisa ser igual: 0.3.0 -> v0.3.0) e commite
+# 2. crie e envie a tag
+git tag v0.3.0
+git push origin main v0.3.0
+```
+
+Acompanhe em **Actions**. Se a tag não bater com a versão do `pyproject.toml`, o workflow falha antes do build.
 
 ## Restauração
 
