@@ -36,6 +36,7 @@ depende de duas escolhas:
 | `DB_ENGINE`       | não         | `postgres`      | `postgres` ou `firebird`. |
 | `COMPRESS_BACKUP` | não         | `true`          | Comprime o dump com gzip (`.gz`). |
 | `BACKUP_TARGETS`  | não         | `ssh`           | `ssh`, `s3` ou `ssh,s3`. |
+| `HEALTHCHECK_URL` | não         | —               | URL de ping do [Healthchecks.io](https://healthchecks.io) (`https://hc-ping.com/<uuid>`). Vazio = desligado. Ver [Monitoramento](#monitoramento-healthchecksio). |
 
 **PostgreSQL** (`DB_ENGINE=postgres`)
 
@@ -263,6 +264,36 @@ jq 'select(.run_id=="a1b2c3d4")' *.jsonl
 # erros (sem traceback)
 jq -c 'select(.level=="ERROR") | {ts,run_id,event,error}' *.jsonl
 ```
+
+## Monitoramento (Healthchecks.io)
+
+Com `HEALTHCHECK_URL` definida, cada execução avisa o [Healthchecks.io](https://healthchecks.io):
+
+| Momento | Requisição | Efeito no Healthchecks |
+|---------|------------|------------------------|
+| Início  | `GET <url>/start` | Marca o início, mede a duração e detecta execução travada. |
+| Sucesso (`status=success`) | `POST <url>` | Check fica verde. |
+| Falha ou parcial | `POST <url>/fail` | Alerta imediato. |
+
+O corpo dos pings de fim é o mesmo resumo do `run.finished` mais o `error`, por exemplo:
+
+```json
+{"run_id":"a1b2c3d4","status":"partial","exit_code":1,"duration_s":252.9,"backup_file":"backup_20261021_030000.fbk.gz","target_results":{"ssh":"failed","s3":"ok"},"failed_targets":["ssh"],"files_backed_up":0,"errors":2,"warnings":0,"error":"Backup failed on target(s): ssh"}
+```
+
+Use o `run_id` para ver os detalhes no log: `jq 'select(.run_id=="a1b2c3d4")' /var/log/backup_script/*.jsonl`.
+
+Configuração do check no Healthchecks:
+
+- **Period**: o intervalo do cron (ex.: 1 dia para `0 2 * * *`), ou use o schedule em formato cron.
+- **Grace time**: maior que a duração normal do backup. Se o ping de fim não chegar nesse prazo
+  (script travado, servidor desligado, cron parado), o Healthchecks também alerta.
+
+A notificação nunca interrompe o backup: se o Healthchecks estiver fora do ar, o log registra
+`healthcheck.ping.failed` (WARNING) e o script segue. A URL não é gravada no log, porque o UUID é o que autoriza o ping.
+
+> Erros de configuração detectados ao carregar o `.env` (ex.: `BACKUP_TARGETS` inválido) acontecem antes do
+> primeiro ping e não geram `/fail`. O Healthchecks avisa quando o prazo do ping vencer.
 
 ## Deploy
 
