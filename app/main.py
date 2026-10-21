@@ -1,6 +1,9 @@
 import logging
 import os
+import socket
 import sys
+import time
+import uuid
 
 # ===== FIX PARA PYINSTALLER =====
 # Garante que a pasta 'app' esteja no path tanto rodando como .py quanto como binário
@@ -21,42 +24,50 @@ from config import (
     AWS_SECRET_ACCESS_KEY,
     BACKUP_DAYS,
     BACKUP_TARGETS,
+    COMPRESS_BACKUP,
     DB_ENGINE,
     DEST_PATH,
     LOGS_DIR,
     NOW,
     PUB_KEY_PATH,
     S3_BUCKET,
+    S3_PREFIX,
     SOURCE_PATH,
     SSH_PORT,
     SSH_SERVER,
     SSH_USER,
 )
+from logger import log_event, setup_logging
 from s3_client import create_s3_client
 from ssh_client import create_ssh_client
+
+logger = logging.getLogger("main")
 
 
 def main():
 
-    os.makedirs(LOGS_DIR, exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        filename=f"{LOGS_DIR}/backup_script_{NOW.date()}.log",
-        encoding="utf-8",
-        filemode="a",
-        format="{asctime} - {levelname} - {message}",
-        style="{",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    run_id = uuid.uuid4().hex[:8]
+    started = time.monotonic()
+    error_counter = setup_logging(LOGS_DIR, run_id, NOW.date())
 
-    logging.info(
-        f"Backup script started (engine: {DB_ENGINE}, "
-        f"targets: {', '.join(BACKUP_TARGETS)})"
+    log_event(
+        logger, "run.started",
+        engine=DB_ENGINE,
+        targets=BACKUP_TARGETS,
+        compress=COMPRESS_BACKUP,
+        backup_days=BACKUP_DAYS,
+        source_path=SOURCE_PATH,
+        dest_path=DEST_PATH,
+        s3_bucket=S3_BUCKET,
+        s3_prefix=S3_PREFIX,
+        host=socket.gethostname(),
+        pid=os.getpid(),
     )
 
     ssh_client = None
     s3_client = None
     exit_code = 0
+    summary = {}
 
     try:
 
@@ -92,22 +103,53 @@ def main():
             targets=BACKUP_TARGETS,
             ssh_client=ssh_client,
             dest_path=DEST_PATH,
-            s3_client=s3_client
+            s3_client=s3_client,
+            summary=summary
         )
 
-    except Exception as e:
-        logging.error(e)
+    except Exception:
+        log_event(logger, "run.failed", logging.ERROR, exc_info=True)
         exit_code = 1
 
     finally:
         if ssh_client:
             ssh_client.close()
-            logging.info("Closed SSH connection")
+            log_event(logger, "ssh.connection.closed")
 
-        logging.info("Backup script finished")
-        logging.info(f"{'#' * 100}")
+        status = get_run_status(exit_code, summary)
+        result = {
+            "status": status,
+            "exit_code": exit_code,
+            "duration_s": round(time.monotonic() - started, 3),
+            "backup_file": summary.get("backup_file"),
+            "target_results": summary.get("target_results", {}),
+            "failed_targets": summary.get("failed_targets", []),
+            "files_backed_up": summary.get("files_backed_up", 0),
+            "errors": error_counter.errors,
+            "warnings": error_counter.warnings,
+        }
+        log_event(
+            logger, "run.finished",
+            logging.INFO if status == "success" else logging.ERROR,
+            **result
+        )
 
     sys.exit(exit_code)
+
+
+def get_run_status(exit_code: int, summary: dict) -> str:
+    """
+    success: every target ok
+    partial: at least one target ok
+    failed: dump/config failure or every target failed
+    """
+    if exit_code == 0:
+        return "success"
+
+    if "ok" in summary.get("target_results", {}).values():
+        return "partial"
+
+    return "failed"
 
 
 if __name__ == "__main__":

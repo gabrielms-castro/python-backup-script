@@ -3,7 +3,16 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 from typing import Optional
+
+from logger import log_event
+from utils import get_file_size
+
+logger = logging.getLogger(__name__)
+
+# gbak/pg_dump run in verbose mode; only the end of stderr is useful on failure
+STDERR_TAIL_CHARS = 2000
 
 BACKUP_EXTENSIONS = {
     "postgres": ".sql",
@@ -62,6 +71,8 @@ def gbak_backup_database(
 
 
 def _run_dump_command(tool: str, cmd: list, env: dict, output_file: str) -> bool:
+    started = time.monotonic()
+
     try:
         subprocess.run(
             cmd,
@@ -71,14 +82,32 @@ def _run_dump_command(tool: str, cmd: list, env: dict, output_file: str) -> bool
             check=True
         )
 
-        logging.info(f"[OK] Database dump created ({tool}): {output_file}")
+        log_event(
+            logger, "dump.ok",
+            tool=tool,
+            file=os.path.basename(output_file),
+            size_bytes=get_file_size(output_file),
+            duration_s=round(time.monotonic() - started, 3)
+        )
         return True
 
     except subprocess.CalledProcessError as e:
-        logging.error(f"[FAIL] {tool} failed: {e.stderr}")
+        log_event(
+            logger, "dump.failed", logging.ERROR,
+            tool=tool,
+            file=os.path.basename(output_file),
+            returncode=e.returncode,
+            stderr_tail=(e.stderr or "")[-STDERR_TAIL_CHARS:],
+            duration_s=round(time.monotonic() - started, 3)
+        )
 
-    except Exception as e:
-        logging.error(f"[ERROR] Exception during {tool}: {e}")
+    except Exception:
+        log_event(
+            logger, "dump.failed", logging.ERROR, exc_info=True,
+            tool=tool,
+            file=os.path.basename(output_file),
+            duration_s=round(time.monotonic() - started, 3)
+        )
 
     _remove_partial_file(output_file)
     return False
@@ -86,17 +115,28 @@ def _run_dump_command(tool: str, cmd: list, env: dict, output_file: str) -> bool
 
 def compress_file(filepath: str) -> Optional[str]:
     gz_filepath = f"{filepath}.gz"
+    started = time.monotonic()
 
     try:
+        original_size = get_file_size(filepath)
         with open(filepath, "rb") as src, gzip.open(gz_filepath, "wb") as dst:
             shutil.copyfileobj(src, dst)
 
         os.remove(filepath)
-        logging.info(f"[OK] Backup compressed: {gz_filepath}")
+        log_event(
+            logger, "compress.ok",
+            file=os.path.basename(gz_filepath),
+            size_bytes=get_file_size(gz_filepath),
+            original_size_bytes=original_size,
+            duration_s=round(time.monotonic() - started, 3)
+        )
         return gz_filepath
 
-    except Exception as e:
-        logging.error(f"[FAIL] Backup could not be compressed {filepath}: {e}")
+    except Exception:
+        log_event(
+            logger, "compress.failed", logging.ERROR, exc_info=True,
+            file=os.path.basename(filepath)
+        )
         _remove_partial_file(gz_filepath)
         return None
 
@@ -137,6 +177,9 @@ def _remove_partial_file(filepath: str) -> None:
     try:
         if os.path.isfile(filepath):
             os.remove(filepath)
-            logging.info(f"Removed partial file: {filepath}")
-    except Exception as e:
-        logging.error(f"[ERROR] Could not remove partial file {filepath}: {e}")
+            log_event(logger, "partial_file.removed", path=filepath)
+    except Exception:
+        log_event(
+            logger, "partial_file.remove_failed", logging.ERROR, exc_info=True,
+            path=filepath
+        )

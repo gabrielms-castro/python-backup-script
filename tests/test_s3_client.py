@@ -1,9 +1,18 @@
+import os
+import sys
 import unittest
 from unittest.mock import MagicMock
 
 from botocore.exceptions import ClientError
 
-from app.s3_client import has_s3_object, make_s3_key, upload_file_s3
+# app modules use sys.path style imports (from logger import ...)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
+
+from app.s3_client import (  # noqa: E402
+    has_s3_object,
+    make_s3_key,
+    upload_file_s3,
+)
 
 
 def client_error(code):

@@ -1,6 +1,9 @@
 import logging
 
 import paramiko
+from logger import log_event
+
+logger = logging.getLogger(__name__)
 
 
 def create_ssh_client(server, port, user, password=None, key_filepath=None):
@@ -13,14 +16,21 @@ def create_ssh_client(server, port, user, password=None, key_filepath=None):
         elif key_filepath:
             client.connect(server, port, user, key_filename=key_filepath)
 
-        logging.info(f"SSH connection established to {user}@{server}:{port}")
+        log_event(logger, "ssh.connect.ok", server=server, port=port, user=user)
 
         return client
 
     except paramiko.AuthenticationException:
-        logging.error("Authentication failed. Check your credentials.")
+        log_event(
+            logger, "ssh.connect.failed", logging.ERROR, exc_info=True,
+            server=server, port=port, user=user,
+            hint="authentication failed, check your credentials"
+        )
         raise
 
-    except Exception as e:
-        logging.error(f"Failed to connect: {e}")
+    except Exception:
+        log_event(
+            logger, "ssh.connect.failed", logging.ERROR, exc_info=True,
+            server=server, port=port, user=user
+        )
         raise

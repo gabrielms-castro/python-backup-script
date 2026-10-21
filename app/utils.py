@@ -1,5 +1,10 @@
 import logging
+import os
 from datetime import datetime, timedelta
+
+from logger import log_event
+
+logger = logging.getLogger(__name__)
 
 
 def get_datetime(filename):
@@ -13,7 +18,10 @@ def get_datetime(filename):
         return datetime.strptime(date_string, "%Y%m%d %H%M%S")
 
     except ValueError as exc:
-        logging.warning(f"Invalid datetime format in {filename}: {exc}")
+        log_event(
+            logger, "filename.datetime_invalid", logging.WARNING,
+            file=filename, error=str(exc)
+        )
         return None
 
 
@@ -105,3 +113,13 @@ def make_dest_file_abs_path(dest_path, remote_filename):
 
 def is_file_backed_up(src_filename: str, dest_files: list) -> bool:
     return src_filename in dest_files
+
+
+def get_file_size(filepath: str):
+    """
+    File size in bytes for logging; None when it cannot be read.
+    """
+    try:
+        return os.path.getsize(filepath)
+    except OSError:
+        return None

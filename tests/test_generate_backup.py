@@ -1,11 +1,15 @@
 import gzip
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from app.generate_backup import (
+# app modules use sys.path style imports (from logger import ...)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
+
+from app.generate_backup import (  # noqa: E402
     compress_file,
     gbak_backup_database,
     generate_backup,

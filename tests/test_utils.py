@@ -1,7 +1,12 @@
 import datetime
+import os
+import sys
 import unittest
 
-from app.utils import (
+# app modules use sys.path style imports (from logger import ...)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
+
+from app.utils import (  # noqa: E402
     get_datetime,
     get_file_name,
     get_files_older_than_n_days,

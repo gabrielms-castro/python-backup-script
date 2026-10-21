@@ -38,7 +38,7 @@ class TestRunBackup(unittest.TestCase):
     def setUp(self):
         self.src_files = [{'filepath': f'/srv/backup/{FILENAME}'}]
 
-    def run_backup(self, targets, ssh_client=None, s3_client=None):
+    def run_backup(self, targets, ssh_client=None, s3_client=None, summary=None):
         return backup.run_backup(
             src_path='/srv/backup',
             backup_days=7,
@@ -46,6 +46,7 @@ class TestRunBackup(unittest.TestCase):
             ssh_client=ssh_client,
             dest_path='/backups',
             s3_client=s3_client,
+            summary=summary,
         )
 
     @patch('backup.copy_files_s3', return_value={FILENAME})
@@ -53,9 +54,14 @@ class TestRunBackup(unittest.TestCase):
     def test_all_targets_ok(self, _ssh, _s3, _gen, mock_search, mock_clean):
         mock_search.return_value = self.src_files
 
-        self.run_backup(['ssh', 's3'], MagicMock(), MagicMock())
+        summary = {}
+        self.run_backup(['ssh', 's3'], MagicMock(), MagicMock(), summary)
 
         mock_clean.assert_called_once_with(self.src_files, {FILENAME})
+        self.assertEqual(summary['backup_file'], FILENAME)
+        self.assertEqual(summary['target_results'], {'ssh': 'ok', 's3': 'ok'})
+        self.assertEqual(summary['failed_targets'], [])
+        self.assertEqual(summary['files_backed_up'], 1)
 
     @patch('backup.copy_files_s3', return_value={FILENAME})
     def test_ssh_connection_failed_keeps_local_file(
@@ -66,11 +72,20 @@ class TestRunBackup(unittest.TestCase):
         """
         mock_search.return_value = self.src_files
 
+        summary = {}
         with self.assertRaises(Exception) as ctx:
-            self.run_backup(['ssh', 's3'], ssh_client=None, s3_client=MagicMock())
+            self.run_backup(
+                ['ssh', 's3'], ssh_client=None, s3_client=MagicMock(),
+                summary=summary
+            )
 
         self.assertIn('ssh', str(ctx.exception))
         mock_clean.assert_called_once_with(self.src_files, set())
+        self.assertEqual(
+            summary['target_results'], {'ssh': 'failed', 's3': 'ok'}
+        )
+        self.assertEqual(summary['failed_targets'], ['ssh'])
+        self.assertEqual(summary['files_backed_up'], 0)
 
     @patch('backup.copy_files_s3', return_value=set())
     @patch('backup.run_ssh_backup', return_value={FILENAME})

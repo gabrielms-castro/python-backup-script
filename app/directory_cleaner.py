@@ -2,6 +2,7 @@ import logging
 import os
 import shlex
 
+from logger import log_event
 from utils import (
     get_file_name,
     get_files_infos,
@@ -11,36 +12,52 @@ from utils import (
     search_for_files_ssh_server,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def remote_delete_file(ssh_client, dest_filepath, dest_filename) -> bool:
     absolute_path = make_dest_file_abs_path(dest_filepath, dest_filename)
 
     if not has_remote_file(ssh_client, absolute_path):
-        logging.error(f"[FAIL] Remote file not found, keeping local copy: {absolute_path}")
-        return
+        log_event(
+            logger, "remote.file.delete_failed", logging.ERROR,
+            file=dest_filename, path=absolute_path, error="remote file not found"
+        )
+        return False
 
     try:
         stdin, stdout, stderr = ssh_client.exec_command(f"rm -f {shlex.quote(absolute_path)}")
         exit_code = stdout.channel.recv_exit_status()
 
         if exit_code == 0:
-            logging.info(f"[OK] Remote file deleted: {dest_filename}")
-            return
-        else:
-            error_msg = stderr.read().decode().strip()
-            logging.error(f"[FAIL] Remote file could not be deleted {dest_filename}: {error_msg}")
-            return
+            log_event(logger, "remote.file.deleted", file=dest_filename, path=absolute_path)
+            return True
 
-    except Exception as e:
-        logging.error(f"[ERROR] Exception deleting {dest_filename}: {e}")
-        return
+        error_msg = stderr.read().decode().strip()
+        log_event(
+            logger, "remote.file.delete_failed", logging.ERROR,
+            file=dest_filename, path=absolute_path, exit_code=exit_code, error=error_msg
+        )
+        return False
+
+    except Exception:
+        log_event(
+            logger, "remote.file.delete_failed", logging.ERROR, exc_info=True,
+            file=dest_filename, path=absolute_path
+        )
+        return False
 
 
 def remote_delete_older_files(ssh_client, dest_path, dest_files_older_than_n_days):
     """
     Checks remote files to be deleted
     """
-    logging.info("Deleting older files...")
+    log_event(
+        logger, "remote.cleanup.started",
+        path=dest_path,
+        count=len(dest_files_older_than_n_days),
+        files=dest_files_older_than_n_days
+    )
 
     for _file_to_delete in dest_files_older_than_n_days:
         remote_delete_file(ssh_client, dest_path, _file_to_delete)
@@ -64,12 +81,15 @@ def remote_dir_cleaner(ssh_client, last_n_days_array, dest_path):
 
 
 def source_delete_file(src_filepath):
+    filename = get_file_name(src_filepath)
     try:
-        filename = get_file_name(src_filepath)
         os.remove(src_filepath)
-        logging.info(f"\t[OK] source file deleted: {filename}")
+        log_event(logger, "source.file.deleted", file=filename, path=src_filepath)
     except Exception:
-        logging.error(f"\t[FAIL] Source file cannot be deleted: {src_filepath}")
+        log_event(
+            logger, "source.file.delete_failed", logging.ERROR, exc_info=True,
+            file=filename, path=src_filepath
+        )
 
 
 def source_dir_cleaner(src_files, backed_up_filenames: set):
@@ -80,9 +100,13 @@ def source_dir_cleaner(src_files, backed_up_filenames: set):
     """
 
     for source_file in src_files:
-        source_path = source_file.get("filepath", "falhei papai")
+        source_path = source_file["filepath"]
         filename = get_file_name(source_path)
 
         if is_file_backed_up(filename, backed_up_filenames):
-            logging.info(f"Deleting backed up source file: {source_path}")
             source_delete_file(source_path)
+        else:
+            log_event(
+                logger, "source.file.kept",
+                file=filename, reason="not confirmed on every target"
+            )

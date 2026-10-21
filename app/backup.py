@@ -1,6 +1,8 @@
 import logging
 import os
 import shlex
+import time
+from typing import Optional
 
 from config import (
     COMPRESS_BACKUP,
@@ -23,15 +25,19 @@ from config import (
 )
 from directory_cleaner import remote_dir_cleaner, source_dir_cleaner
 from generate_backup import generate_backup
+from logger import log_event
 from s3_client import has_s3_object, make_s3_key, upload_file_s3
 from scp import SCPClient
 from utils import (
     generate_n_days_array,
     get_datetime,
     get_file_name,
+    get_file_size,
     is_file_backed_up,
     search_for_files_ssh_server,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def run_backup(
@@ -40,13 +46,18 @@ def run_backup(
     targets: list,
     ssh_client=None,
     dest_path=None,
-    s3_client=None
+    s3_client=None,
+    summary: Optional[dict] = None
 ):
     """
     Generates the backup and sends it to every configured target (SSH and/or S3).
     A source file is only deleted after being backed up on all targets.
     A configured target without a client (e.g. SSH connection failed) counts as failed.
+    The optional `summary` dict is filled with the run results for auditing.
     """
+    if summary is None:
+        summary = {}
+
     if not targets:
         raise Exception("No backup target configured.")
 
@@ -61,43 +72,85 @@ def run_backup(
     if not make_backup_file:
         raise Exception("Backup generation failed.")
 
+    summary["backup_file"] = get_file_name(make_backup_file)
+
     src_files = search_for_backup_files(src_path)
 
+    summary["target_results"] = {}
+    summary["failed_targets"] = []
     backed_up_per_target = []
-    failed_targets = []
 
     if "ssh" in targets:
-        try:
-            if not ssh_client:
-                raise Exception("SSH client not available")
-
-            backed_up_per_target.append(
-                run_ssh_backup(ssh_client, src_files, dest_path, backup_days)
-            )
-        except Exception as exc:
-            logging.error(f"[FAIL] SSH backup failed: {exc}")
-            backed_up_per_target.append(set())
-            failed_targets.append("ssh")
+        backed_up_per_target.append(_backup_ssh_target(
+            ssh_client, src_files, dest_path, backup_days, summary
+        ))
 
     if "s3" in targets:
-        try:
-            if not s3_client:
-                raise Exception("S3 client not available")
-
-            s3_done = copy_files_s3(s3_client, src_files)
-            backed_up_per_target.append(s3_done)
-            if len(s3_done) < len(src_files):
-                failed_targets.append("s3")
-        except Exception as exc:
-            logging.error(f"[FAIL] S3 backup failed: {exc}")
-            backed_up_per_target.append(set())
-            failed_targets.append("s3")
+        backed_up_per_target.append(
+            _backup_s3_target(s3_client, src_files, summary)
+        )
 
     backed_up_filenames = set.intersection(*backed_up_per_target)
+    summary["files_backed_up"] = len(backed_up_filenames)
     source_dir_cleaner(src_files, backed_up_filenames)
 
-    if failed_targets:
-        raise Exception(f"Backup failed on target(s): {', '.join(failed_targets)}")
+    if summary["failed_targets"]:
+        failed = ", ".join(summary["failed_targets"])
+        raise Exception(f"Backup failed on target(s): {failed}")
+
+
+def _backup_ssh_target(ssh_client, src_files, dest_path, backup_days, summary):
+    try:
+        if not ssh_client:
+            raise Exception("SSH client not available")
+
+        ssh_done = run_ssh_backup(
+            ssh_client, src_files, dest_path, backup_days
+        )
+    except Exception:
+        log_event(
+            logger, "target.failed", logging.ERROR, exc_info=True, target="ssh"
+        )
+        _set_target_result(summary, "ssh", ok=False)
+        return set()
+
+    log_event(logger, "target.ok", target="ssh", files=len(ssh_done))
+    _set_target_result(summary, "ssh", ok=True)
+    return ssh_done
+
+
+def _backup_s3_target(s3_client, src_files, summary):
+    try:
+        if not s3_client:
+            raise Exception("S3 client not available")
+
+        s3_done = copy_files_s3(s3_client, src_files)
+    except Exception:
+        log_event(
+            logger, "target.failed", logging.ERROR, exc_info=True, target="s3"
+        )
+        _set_target_result(summary, "s3", ok=False)
+        return set()
+
+    missing = len(src_files) - len(s3_done)
+    if missing > 0:
+        log_event(
+            logger, "target.failed", logging.ERROR,
+            target="s3", error=f"{missing} file(s) not uploaded"
+        )
+        _set_target_result(summary, "s3", ok=False)
+    else:
+        log_event(logger, "target.ok", target="s3", files=len(s3_done))
+        _set_target_result(summary, "s3", ok=True)
+
+    # Partial uploads still count, so those files can be cleaned locally
+    return s3_done
+
+
+def _set_target_result(summary: dict, target: str, ok: bool) -> None:
+    summary["target_results"][target] = "ok" if ok else "failed"
+    if not ok:
+        summary["failed_targets"].append(target)
 
 
 def run_ssh_backup(ssh_client, src_files, dest_path, backup_days) -> set:
@@ -131,7 +184,11 @@ def copy_files_s3(s3_client, src_files: list[dict]) -> set:
         key = make_s3_key(S3_PREFIX, src_filename)
 
         if has_s3_object(s3_client, S3_BUCKET, key):
-            logging.info(f"[SKIP] file <{src_filename}> was already uploaded to S3.")
+            log_event(
+                logger, "s3.upload.skipped",
+                file=src_filename, bucket=S3_BUCKET, key=key,
+                reason="already uploaded"
+            )
             uploaded.add(src_filename)
             continue
 
@@ -172,14 +229,32 @@ def copy_files(ssh_client, src_files: list[dict], dest_path: str) -> None:
         src_filename = get_file_name(src_filepath)
 
         if is_file_backed_up(src_filename, dest_files_list):
-            logging.info(f"[FAIL] file <{src_filename}> was already backed up.")
+            log_event(
+                logger, "ssh.copy.skipped",
+                file=src_filename, reason="already on backup server"
+            )
             continue
 
         if os.path.isfile(src_filepath):
             dest_filepath = os.path.join(dest_path, src_filename)
+            started = time.monotonic()
 
-            copy_files_scp(ssh_client, src_filepath, dest_filepath)
-            logging.info(f"[OK] file <{src_filename}> copied to destination dir <{dest_filepath}>")
+            try:
+                copy_files_scp(ssh_client, src_filepath, dest_filepath)
+            except Exception:
+                log_event(
+                    logger, "ssh.copy.failed", logging.ERROR, exc_info=True,
+                    file=src_filename, dest=dest_filepath
+                )
+                raise
+
+            log_event(
+                logger, "ssh.copy.ok",
+                file=src_filename,
+                dest=dest_filepath,
+                size_bytes=get_file_size(src_filepath),
+                duration_s=round(time.monotonic() - started, 3)
+            )
 
 
 def copy_files_scp(ssh_client, src_file, dest_path):
@@ -202,7 +277,10 @@ def search_for_backup_files(source_path: str) -> list[dict]:
 
             file_created_time = get_datetime(filename)
             if not file_created_time:
-                logging.warning(f"Skipping file without datetime: {filename}")
+                log_event(
+                    logger, "source.file.skipped", logging.WARNING,
+                    file=filename, reason="no datetime in filename"
+                )
                 continue
 
             file_metada = {
@@ -212,8 +290,18 @@ def search_for_backup_files(source_path: str) -> list[dict]:
 
             files_info.append(file_metada)
 
-    except Exception as exc:
-        logging.error(exc)
+    except Exception:
+        log_event(
+            logger, "source.scan.failed", logging.ERROR, exc_info=True,
+            path=source_path
+        )
+
+    log_event(
+        logger, "source.scan",
+        path=source_path,
+        count=len(files_info),
+        files=[get_file_name(item["filepath"]) for item in files_info]
+    )
 
     return files_info
 
