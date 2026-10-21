@@ -30,14 +30,16 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    # Debian bullseye ships glibc 2.31: the binary runs on servers with
-    # glibc >= 2.31 (Debian 11+, Ubuntu 20.04+, RHEL 9+)
-    container: python:3.12-bullseye
+    # Same environment where the binary was built and validated (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
           ref: refs/tags/${{ env.TAG }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Install uv
         run: pip install --no-cache-dir "uv>=0.5,<1.0"
