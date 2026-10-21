@@ -1,0 +1,96 @@
+name: release
+
+# Builds the PyInstaller binary and publishes it on a GitHub Release
+# when a version tag is pushed: git tag v0.3.0 && git push origin v0.3.0
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  ASSET_NAME: backup_v2-linux-x86_64
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Debian bullseye ships glibc 2.31: the binary runs on servers with
+    # glibc >= 2.31 (Debian 11+, Ubuntu 20.04+, RHEL 9+)
+    container: python:3.12-bullseye
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        run: pip install --no-cache-dir "uv>=0.5,<1.0"
+
+      - name: Check tag matches pyproject version
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match pyproject version $version" >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run tests
+        run: uv run task test
+
+      - name: Build binary
+        run: |
+          uv run task build
+          mv dist/backup_v2 "dist/$ASSET_NAME"
+          ldd --version | head -1
+
+      # Runs the binary until the S3 config check, before any dump or upload,
+      # to make sure every module was bundled and the run is logged
+      - name: Smoke test binary
+        run: |
+          smoke_dir=$(mktemp -d)
+          mkdir -p "$smoke_dir/src" "$smoke_dir/logs"
+          cd "$smoke_dir"
+          set +e
+          env ENVIRONMENT=prod SOURCE_PATH="$smoke_dir/src" LOGS_DIR="$smoke_dir/logs" \
+            BACKUP_TARGETS=s3 "$GITHUB_WORKSPACE/dist/$ASSET_NAME"
+          exit_code=$?
+          set -e
+          test "$exit_code" -eq 1
+          grep -q '"event": *"run.finished"' "$smoke_dir"/logs/*.jsonl
+
+      - name: Checksum
+        run: |
+          cd dist
+          sha256sum "$ASSET_NAME" > "$ASSET_NAME.sha256"
+          cat "$ASSET_NAME.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary
+          path: |
+            dist/${{ env.ASSET_NAME }}
+            dist/${{ env.ASSET_NAME }}.sha256
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binary
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag \
+            "$ASSET_NAME" "$ASSET_NAME.sha256"
