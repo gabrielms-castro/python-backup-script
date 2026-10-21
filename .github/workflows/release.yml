@@ -59,7 +59,9 @@ jobs:
       - name: Build binary
         run: |
           uv run task build
-          mv dist/backup_v2 "dist/$ASSET_NAME"
+          # the task's --name may change; dist/ holds only the binary
+          test "$(ls dist | wc -l)" -eq 1
+          mv dist/* "dist/$ASSET_NAME"
           ldd --version | head -1
 
       # Runs the binary until the S3 config check, before any dump or upload,
