@@ -32,7 +32,7 @@ depende de duas escolhas:
 |-------------------|-------------|-----------------|-----------|
 | `ENVIRONMENT`     | sim         | —               | Use `prod` no servidor. Com `dev`, `SOURCE_PATH` e `LOGS_DIR` são ignorados (usa `/srv/test_app/backup` e `./logs`). |
 | `SOURCE_PATH`     | sim         | —               | Diretório **local** onde o dump é gerado antes do envio. Precisa existir e ter permissão de escrita. Os arquivos são apagados daqui depois de enviados a todos os destinos. |
-| `LOGS_DIR`        | recomendada | `<projeto>/logs`| Diretório dos logs (`backup_script_YYYY-MM-DD.log`). Defina sempre ao usar o binário. |
+| `LOGS_DIR`        | recomendada | `<projeto>/logs`| Diretório dos logs (`backup_script_YYYY-MM-DD.jsonl`, ver [Logs e auditoria](#logs-e-auditoria)). Defina sempre ao usar o binário. |
 | `DB_ENGINE`       | não         | `postgres`      | `postgres` ou `firebird`. |
 | `COMPRESS_BACKUP` | não         | `true`          | Comprime o dump com gzip (`.gz`). |
 | `BACKUP_TARGETS`  | não         | `ssh`           | `ssh`, `s3` ou `ssh,s3`. |
@@ -215,6 +215,55 @@ uv run task build  # gera o binário dist/backup_v2
 
 O processo termina com código `0` em caso de sucesso e `1` em caso de erro (detalhes em `LOGS_DIR`).
 
+## Logs e auditoria
+
+Cada execução grava eventos estruturados em `LOGS_DIR/backup_script_YYYY-MM-DD.jsonl` (um JSON por linha) e
+uma versão legível no `stderr` (útil no e-mail do cron ou no journald). Todos os eventos de uma execução
+compartilham o mesmo `run_id`.
+
+```json
+{"ts":"2026-10-21T03:04:13.002-03:00","level":"ERROR","run_id":"a1b2c3d4","logger":"backup","event":"target.failed","target":"ssh","error":"SSH client not available","error_type":"Exception","traceback":"..."}
+```
+
+Campos fixos: `ts`, `level`, `run_id`, `logger`, `event`. Erros com exceção trazem `error`, `error_type` e `traceback`.
+Senhas e chaves nunca são logadas.
+
+Toda execução começa com `run.started` (configuração usada) e termina com `run.finished`, que resume o resultado:
+
+| Campo             | Descrição |
+|-------------------|-----------|
+| `status`          | `success` (todos os targets ok), `partial` (algum target ok, outro falhou) ou `failed` (falha no dump/configuração ou em todos os targets) |
+| `exit_code`       | `0` apenas em `success` |
+| `duration_s`      | Duração total |
+| `backup_file`     | Arquivo gerado nesta execução |
+| `target_results`  | Resultado por target, ex.: `{"ssh":"failed","s3":"ok"}` |
+| `failed_targets`  | Targets com falha |
+| `files_backed_up` | Arquivos confirmados em todos os targets (removidos de `SOURCE_PATH`) |
+| `errors`, `warnings` | Quantidade de eventos `ERROR`/`WARNING` na execução |
+
+Principais eventos intermediários: `ssh.connect.ok|failed`, `s3.client.created`, `dump.ok|failed` (com
+`returncode` e o final do `stderr` do `pg_dump`/`gbak`), `compress.ok|failed`, `source.scan`,
+`ssh.copy.ok|skipped|failed`, `s3.upload.ok|skipped|failed`, `target.ok|failed`, `remote.cleanup.started`,
+`remote.file.deleted|delete_failed`, `source.file.deleted|delete_failed|kept`, `run.failed`.
+
+Consultas úteis com [`jq`](https://jqlang.org/):
+
+```bash
+cd /var/log/backup_script
+
+# última execução
+jq -c 'select(.event=="run.finished")' *.jsonl | tail -1
+
+# histórico de execuções que não tiveram sucesso
+jq -c 'select(.event=="run.finished" and .status!="success") | {ts,run_id,status,failed_targets}' *.jsonl
+
+# todos os eventos de uma execução
+jq 'select(.run_id=="a1b2c3d4")' *.jsonl
+
+# erros (sem traceback)
+jq -c 'select(.level=="ERROR") | {ts,run_id,event,error}' *.jsonl
+```
+
 ## Deploy
 
 O script roda no **servidor do banco** (é lá que o `pg_dump`/`gbak` gera o arquivo) e é agendado pelo cron.
@@ -271,7 +320,7 @@ chmod 600 /opt/backup_script/.env
 cd /opt/backup_script && ./backup_v2          # opção A
 cd /opt/backup_script && uv run python app/main.py   # opção B
 echo $?                                       # 0 = sucesso
-tail -n 50 /var/log/backup_script/backup_script_$(date +%F).log
+jq -c 'select(.event=="run.finished")' /var/log/backup_script/backup_script_$(date +%F).jsonl | tail -1
 ```
 
 Confira se o arquivo chegou ao destino (`DEST_PATH` no servidor de backup e/ou `s3://<bucket>/<prefix>/`)
