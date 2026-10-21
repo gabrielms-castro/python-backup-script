@@ -69,21 +69,20 @@ def source_delete_file(src_filepath):
         os.remove(src_filepath)
         logging.info(f"\t[OK] source file deleted: {filename}")
     except Exception:
-        logging.error(f"\t[FAIL] Source file cannot be deleted: {src_filepath['filepath']}")
+        logging.error(f"\t[FAIL] Source file cannot be deleted: {src_filepath}")
 
 
-def source_dir_cleaner(ssh_client, src_files, dest_path):
+def source_dir_cleaner(src_files, backed_up_filenames: set):
     """
-    Deletes files after backing up on the destination server.
-    Source directory must be cleaned if the file was successfully backed up.
+    Deletes files after backing up on the destination targets.
+    Source directory must be cleaned only if the file was successfully backed up
+    on every active target (backed_up_filenames).
     """
-
-    dest_files_list = search_for_files_ssh_server(ssh_client, dest_path)
 
     for source_file in src_files:
         source_path = source_file.get("filepath", "falhei papai")
         filename = get_file_name(source_path)
 
-        if is_file_backed_up(filename, dest_files_list):
+        if is_file_backed_up(filename, backed_up_filenames):
             logging.info(f"Deleting backed up source file: {source_path}")
             source_delete_file(source_path)

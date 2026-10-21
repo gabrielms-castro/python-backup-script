@@ -6,24 +6,59 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _env(name, default=None):
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return value.strip()
+
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 NOW = datetime.now()
-ENVIRONMENT = os.getenv("ENVIRONMENT")
-BACKUP_DAYS = int(os.getenv("BACKUP_DAYS"))
-SOURCE_PATH = Path(os.environ.get("SOURCE_PATH")) if ENVIRONMENT != "dev" else Path("/srv/test_app/backup")
-DEST_PATH = Path(os.environ.get("DEST_PATH"))
-LOGS_DIR = Path(os.environ.get("LOGS_DIR")) if ENVIRONMENT != "dev" else BASE_DIR / "logs"
-SSH_USER = os.getenv("SSH_USER").strip()
-SSH_PASSWORD = os.getenv("SSH_PASSWORD").strip()
-SSH_SERVER = os.getenv("SSH_SERVER").strip()
-PUB_KEY_PATH = os.getenv("PUB_KEY_PATH").strip()
-PORT = os.getenv("PORT").strip()
+ENVIRONMENT = _env("ENVIRONMENT")
+BACKUP_DAYS = int(_env("BACKUP_DAYS", "7"))
+SOURCE_PATH = Path(_env("SOURCE_PATH")) if ENVIRONMENT != "dev" else Path("/srv/test_app/backup")
+DEST_PATH = Path(_env("DEST_PATH")) if _env("DEST_PATH") else None
+LOGS_DIR = Path(_env("LOGS_DIR", BASE_DIR / "logs")) if ENVIRONMENT != "dev" else BASE_DIR / "logs"
+SSH_USER = _env("SSH_USER")
+SSH_PASSWORD = _env("SSH_PASSWORD")
+SSH_SERVER = _env("SSH_SERVER")
+SSH_PORT = _env("SSH_PORT") or _env("PORT", "22")
+PUB_KEY_PATH = _env("PUB_KEY_PATH")
 
+# Backup settings
+DB_ENGINE = _env("DB_ENGINE", "postgres").lower()  # postgres | firebird
+COMPRESS_BACKUP = _env("COMPRESS_BACKUP", "true").lower() == "true"
+BACKUP_TARGETS = [
+    target.strip()
+    for target in _env("BACKUP_TARGETS", "ssh").lower().split(",")
+    if target.strip()
+]  # ssh | s3 | ssh,s3
+
+_invalid_targets = set(BACKUP_TARGETS) - {"ssh", "s3"}
+if _invalid_targets or not BACKUP_TARGETS:
+    raise ValueError(f"Invalid BACKUP_TARGETS: {_env('BACKUP_TARGETS')}")
+
+# AWS S3 Variables
+S3_BUCKET = _env("S3_BUCKET")
+S3_PREFIX = _env("S3_PREFIX", "")
+S3_STORAGE_CLASS = _env("S3_STORAGE_CLASS", "STANDARD")
+AWS_REGION = _env("AWS_REGION", "us-east-1")
+AWS_ACCESS_KEY_ID = _env("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = _env("AWS_SECRET_ACCESS_KEY")
 
 # PostgreSQL Variables
-PG_HOST = os.getenv("PG_HOST")
-PG_DB_NAME = os.getenv("PG_DB_NAME")
-PG_PORT = os.getenv("PG_PORT")
-DB_NAME = os.getenv("DB_NAME")
-PG_USER = os.getenv("PG_USER")
-PG_PASSWORD = os.getenv("PG_PASSWORD")
+PG_HOST = _env("PG_HOST", "localhost")
+PG_PORT = _env("PG_PORT", "5432")
+PG_DB_NAME = _env("PG_DB_NAME")
+PG_USER = _env("PG_USER")
+PG_PASSWORD = _env("PG_PASSWORD")
+
+# Firebird Variables
+FB_HOST = _env("FB_HOST", "localhost")
+FB_PORT = _env("FB_PORT", "3050")
+FB_DATABASE = _env("FB_DATABASE")
+FB_USER = _env("FB_USER", "SYSDBA")
+FB_PASSWORD = _env("FB_PASSWORD")
+FB_GBAK_PATH = _env("FB_GBAK_PATH", "gbak")
