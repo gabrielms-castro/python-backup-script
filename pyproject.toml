@@ -11,7 +11,8 @@ dependencies = [
     "python-dotenv (>=1.2.1,<2.0.0)",
     "paramiko (>=4.0.0,<5.0.0)",
     "scp (>=0.15.0,<0.16.0)",
-    "boto3 (>=1.35,<2.0.0)"
+    "boto3 (>=1.35,<2.0.0)",
+    "requests (>=2.32,<3.0.0)"
 ]
 
 
@@ -76,4 +77,4 @@ pre_format = 'ruff check --fix'
 format = 'ruff format'
 run = 'python3 app/main.py'
 test = 'python3 -m unittest discover -s tests'
-build = 'pyinstaller --onefile --name backup_v2 --hidden-import=backup --paths=app app/main.py'
+build = 'pyinstaller --onefile --name backup_script_v2 --hidden-import=backup --paths=app app/main.py'
