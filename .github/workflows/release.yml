@@ -103,6 +103,25 @@ jobs:
         with:
           name: binary
 
+      # Install command shown at the top of the release page
+      - name: Write install notes
+        run: |
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          cat > install.md <<EOF
+          ## Instalação no servidor
+
+          \`\`\`bash
+          mkdir -p /opt/backup_script && cd /opt/backup_script
+          curl -fsSLO "$base/$ASSET_NAME" -O "$base/$ASSET_NAME.sha256"
+          sha256sum -c $ASSET_NAME.sha256
+          mv $ASSET_NAME backup_v2 && chmod +x backup_v2
+          \`\`\`
+
+          Sempre a versão mais recente: troque \`download/$TAG\` por \`latest/download\`.
+          Configure o \`.env\` em \`/opt/backup_script\` e rode com \`cd /opt/backup_script && ./backup_v2\`.
+
+          EOF
+
       - name: Publish assets on the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -110,10 +129,19 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
               "$ASSET_NAME" "$ASSET_NAME.sha256"
+
+            # Release created on the UI: put the install notes above its text
+            body=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body)
+            if ! grep -q "Instalação no servidor" <<< "$body"; then
+              printf '%s\n\n%s\n' "$(cat install.md)" "$body" > notes.md
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+            fi
           else
+            # --generate-notes appends the changelog below install.md
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$TAG" \
+              --notes-file install.md \
               --generate-notes \
               --verify-tag \
               "$ASSET_NAME" "$ASSET_NAME.sha256"
