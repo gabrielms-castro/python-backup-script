@@ -28,7 +28,7 @@ SSH_PORT = _env("SSH_PORT") or _env("PORT", "22")
 PUB_KEY_PATH = _env("PUB_KEY_PATH")
 
 # Backup settings
-# postgres | firebird (see databases.DUMP_STRATEGIES)
+# postgres | firebird | mysql | mariadb (see databases.DUMP_STRATEGIES)
 DB_ENGINE = _env("DB_ENGINE", "postgres").lower()
 COMPRESS_BACKUP = _env("COMPRESS_BACKUP", "true").lower() == "true"
 BACKUP_TARGETS = [
@@ -62,3 +62,12 @@ FB_DATABASE = _env("FB_DATABASE")
 FB_USER = _env("FB_USER", "SYSDBA")
 FB_PASSWORD = _env("FB_PASSWORD")
 FB_GBAK_PATH = _env("FB_GBAK_PATH", "gbak")
+
+# MySQL / MariaDB Variables (DB_ENGINE=mysql | mariadb)
+MYSQL_HOST = _env("MYSQL_HOST", "localhost")
+MYSQL_PORT = _env("MYSQL_PORT", "3306")
+MYSQL_DATABASE = _env("MYSQL_DATABASE")
+MYSQL_USER = _env("MYSQL_USER")
+MYSQL_PASSWORD = _env("MYSQL_PASSWORD")
+# empty = mysqldump (mysql) or mariadb-dump (mariadb), from PATH
+MYSQL_DUMP_PATH = _env("MYSQL_DUMP_PATH")

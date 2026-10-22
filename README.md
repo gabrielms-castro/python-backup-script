@@ -12,6 +12,8 @@ Engines suportados (variável `DB_ENGINE`):
 |------------|------------|----------------------------------------|
 | `postgres` | `pg_dump`  | `backup_YYYYmmdd_HHMMSS.sql[.gz]`      |
 | `firebird` | `gbak -b`  | `backup_YYYYmmdd_HHMMSS.fbk[.gz]`      |
+| `mysql`    | `mysqldump`    | `backup_YYYYmmdd_HHMMSS.sql[.gz]`  |
+| `mariadb`  | `mariadb-dump` | `backup_YYYYmmdd_HHMMSS.sql[.gz]`  |
 
 Com `COMPRESS_BACKUP=true` (padrão), o arquivo é comprimido com gzip antes do envio.
 
@@ -20,7 +22,8 @@ Com `COMPRESS_BACKUP=true` (padrão), o arquivo é comprimido com gzip antes do 
 Copie `.env.example` para `.env` e preencha as variáveis. Quais blocos você precisa preencher
 depende de duas escolhas:
 
-- `DB_ENGINE` define **qual banco** é copiado: preencha só o bloco `PG_*` ou só o `FB_*`.
+- `DB_ENGINE` define **qual banco** é copiado: preencha só o bloco `PG_*`, o `FB_*` ou o `MYSQL_*`
+  (usado tanto por `mysql` quanto por `mariadb`).
 - `BACKUP_TARGETS` define **para onde** o backup vai: preencha o bloco `SSH_*` + `DEST_PATH` (ssh),
   o bloco `S3_*` / `AWS_*` (s3), ou os dois (`ssh,s3`).
 
@@ -33,7 +36,7 @@ depende de duas escolhas:
 | `ENVIRONMENT`     | sim         | —               | Use `prod` no servidor. Com `dev`, `SOURCE_PATH` e `LOGS_DIR` são ignorados (usa `/srv/test_app/backup` e `./logs`). |
 | `SOURCE_PATH`     | sim         | —               | Diretório **local** onde o dump é gerado antes do envio. Precisa existir e ter permissão de escrita. Os arquivos são apagados daqui depois de enviados a todos os destinos. |
 | `LOGS_DIR`        | recomendada | `<projeto>/logs`| Diretório dos logs (`backup_script_YYYY-MM-DD.jsonl`, ver [Logs e auditoria](#logs-e-auditoria)). Defina sempre ao usar o binário. |
-| `DB_ENGINE`       | não         | `postgres`      | `postgres` ou `firebird`. |
+| `DB_ENGINE`       | não         | `postgres`      | `postgres`, `firebird`, `mysql` ou `mariadb`. |
 | `COMPRESS_BACKUP` | não         | `true`          | Comprime o dump com gzip (`.gz`). |
 | `BACKUP_TARGETS`  | não         | `ssh`           | `ssh`, `s3` ou `ssh,s3`. |
 | `HEALTHCHECK_URL` | não         | —               | URL de ping do [Healthchecks.io](https://healthchecks.io) (`https://hc-ping.com/<uuid>`). Vazio = desligado. Ver [Monitoramento](#monitoramento-healthchecksio). |
@@ -58,6 +61,17 @@ depende de duas escolhas:
 | `FB_USER`      | não         | `SYSDBA`    | Usuário. |
 | `FB_PASSWORD`  | sim         | —           | Senha. |
 | `FB_GBAK_PATH` | não         | `gbak`      | Caminho do `gbak` (veja [Firebird: `gbak`](#firebird-gbak)). |
+
+**MySQL / MariaDB** (`DB_ENGINE=mysql` ou `DB_ENGINE=mariadb`)
+
+| Variável          | Obrigatória | Padrão      | Descrição |
+|-------------------|-------------|-------------|-----------|
+| `MYSQL_HOST`      | não         | `localhost` | Host do banco. Com `localhost` o cliente usa o socket Unix; use `127.0.0.1` para forçar TCP. |
+| `MYSQL_PORT`      | não         | `3306`      | Porta do banco. |
+| `MYSQL_DATABASE`  | sim         | —           | Nome do banco. |
+| `MYSQL_USER`      | sim         | —           | Usuário (veja os privilégios em [MySQL / MariaDB](#mysql--mariadb)). |
+| `MYSQL_PASSWORD`  | sim         | —           | Senha (passada via arquivo de opções temporário, nunca na linha de comando). |
+| `MYSQL_DUMP_PATH` | não         | vazio       | Caminho do binário de dump. Vazio = `mysqldump` (`mysql`) ou `mariadb-dump` (`mariadb`) do `PATH`. |
 
 **SSH** (`BACKUP_TARGETS` contém `ssh`)
 
@@ -163,6 +177,36 @@ gbak -b -v -g -user SYSDBA -password <senha> localhost/3050:/caminho/banco.fdb t
 
 `FB_DATABASE` deve ser o caminho completo do `.fdb` no servidor, ou um alias definido em `databases.conf`.
 
+## MySQL / MariaDB
+
+O script roda:
+
+```bash
+mysqldump --defaults-extra-file=<tmp> --host=<host> --port=<porta> --user=<usuario> \
+  --single-transaction --quick --routines --triggers --events --no-tablespaces --verbose \
+  --set-gtid-purged=OFF --result-file=<arquivo.sql> <banco>
+```
+
+Com `DB_ENGINE=mariadb` o binário é `mariadb-dump` e não há `--set-gtid-purged` (opção só do MySQL).
+
+- A senha vai num arquivo de opções temporário (`[client] password=...`, permissão `0600`) apagado logo
+  depois do dump, para não aparecer no `ps` nem depender do `MYSQL_PWD` (descontinuado no MySQL 8).
+- `--single-transaction` gera um dump consistente de tabelas InnoDB sem travar o banco.
+- `--no-tablespaces` evita exigir o privilégio `PROCESS` (MySQL 8.0.21+).
+- Use o binário da mesma família e versão igual ou maior que a do servidor (`mysqldump` para MySQL,
+  `mariadb-dump` para MariaDB).
+
+Usuário mínimo para o backup:
+
+```sql
+CREATE USER 'backup'@'localhost' IDENTIFIED BY '<senha>';
+GRANT SELECT, SHOW VIEW, TRIGGER, LOCK TABLES, EVENT ON <banco>.* TO 'backup'@'localhost';
+```
+
+Se o dump falhar em `--routines` (ou as rotinas saírem sem corpo), conceda também `SHOW_ROUTINE`
+(MySQL 8.0.20+: `GRANT SHOW_ROUTINE ON *.* TO ...`) ou `SELECT` global. Teste o comando acima à mão com o
+usuário do backup antes de agendar.
+
 ## AWS S3
 
 O envio usa `boto3` (não precisa do AWS CLI instalado). Preencha o bloco `S3_*` / `AWS_*` do `.env`
@@ -243,7 +287,7 @@ Toda execução começa com `run.started` (configuração usada) e termina com `
 | `errors`, `warnings` | Quantidade de eventos `ERROR`/`WARNING` na execução |
 
 Principais eventos intermediários: `ssh.connect.ok|failed`, `s3.client.created`, `dump.ok|failed` (com
-`returncode` e o final do `stderr` do `pg_dump`/`gbak`), `compress.ok|failed`, `source.scan`,
+`returncode` e o final do `stderr` da ferramenta de dump), `compress.ok|failed`, `source.scan`,
 `ssh.copy.ok|skipped|failed`, `s3.upload.ok|skipped|failed`, `target.ok|failed`, `remote.cleanup.started`,
 `remote.file.deleted|delete_failed`, `source.file.deleted|delete_failed|kept`, `run.failed`.
 
@@ -298,12 +342,12 @@ A notificação nunca interrompe o backup: se o Healthchecks estiver fora do ar,
 
 ## Deploy
 
-O script roda no **servidor do banco** (é lá que o `pg_dump`/`gbak` gera o arquivo) e é agendado pelo cron.
+O script roda no **servidor do banco** (é lá que o `pg_dump`/`gbak`/`mysqldump` gera o arquivo) e é agendado pelo cron.
 
 ### 1. Pré-requisitos no servidor
 
-- `pg_dump` (PostgreSQL) ou `gbak` (Firebird) instalado. No PostgreSQL, a versão do `pg_dump`
-  precisa ser igual ou maior que a do servidor do banco.
+- `pg_dump` (PostgreSQL), `gbak` (Firebird), `mysqldump` (MySQL) ou `mariadb-dump` (MariaDB) instalado.
+  No PostgreSQL e no MySQL/MariaDB, a versão do dump precisa ser igual ou maior que a do servidor do banco.
 - Diretórios de `SOURCE_PATH` e `LOGS_DIR` criados, com permissão de escrita para o usuário que vai rodar o script:
 
   ```bash
@@ -418,4 +462,8 @@ gbak -c -v -user SYSDBA -password <senha> backup_20260101_020000.fbk /caminho/no
 # PostgreSQL
 gunzip backup_20260101_020000.sql.gz
 psql -h localhost -U <usuario> -d <banco> -f backup_20260101_020000.sql
+
+# MySQL / MariaDB (o banco de destino precisa existir)
+gunzip backup_20260101_020000.sql.gz
+mysql -h localhost -u <usuario> -p <banco> < backup_20260101_020000.sql   # ou: mariadb ...
 ```

@@ -1,7 +1,7 @@
 [project]
 name = "python-backup-script"
 version = "0.3.0"
-description = "This project have the objective of making periodically database backups on the production server, sending files to a backup server via SSH"
+description = "Periodic database backups (PostgreSQL, Firebird, MySQL, MariaDB) sent to a backup server via SSH and/or AWS S3"
 authors = [
     {name = "gabrielms-castro",email = "gabriel.castro@phddobrasil.com"}
 ]
