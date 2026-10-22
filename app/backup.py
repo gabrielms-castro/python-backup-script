@@ -2,7 +2,7 @@ import logging
 import os
 from typing import Optional
 
-from config import NOW
+from config import settings
 from directory_cleaner import source_dir_cleaner
 from generate_backup import generate_backup
 from logger import log_event
@@ -34,7 +34,7 @@ def run_backup(
     make_backup_file = generate_backup(
         strategy=dump_strategy,
         output_dir=src_path,
-        timestamp=NOW.strftime('%Y%m%d_%H%M%S'),
+        timestamp=settings.now.strftime('%Y%m%d_%H%M%S'),
         compress=compress
     )
 

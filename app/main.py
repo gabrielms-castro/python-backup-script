@@ -19,19 +19,7 @@ sys.path.insert(0, application_path)
 # ================================
 
 from backup import run_backup
-from config import (
-    BACKUP_DAYS,
-    BACKUP_TARGETS,
-    COMPRESS_BACKUP,
-    DB_ENGINE,
-    DEST_PATH,
-    HEALTHCHECK_URL,
-    LOGS_DIR,
-    NOW,
-    S3_BUCKET,
-    S3_PREFIX,
-    SOURCE_PATH,
-)
+from config import settings
 from databases import build_dump_strategy
 from healthcheck import ping
 from logger import log_event, setup_logging
@@ -44,22 +32,24 @@ def main():
 
     run_id = uuid.uuid4().hex[:8]
     started = time.monotonic()
-    error_counter = setup_logging(LOGS_DIR, run_id, NOW.date())
+    error_counter = setup_logging(
+        settings.logs_dir, run_id, settings.now.date()
+    )
 
     log_event(
         logger, "run.started",
-        engine=DB_ENGINE,
-        targets=BACKUP_TARGETS,
-        compress=COMPRESS_BACKUP,
-        backup_days=BACKUP_DAYS,
-        source_path=SOURCE_PATH,
-        dest_path=DEST_PATH,
-        s3_bucket=S3_BUCKET,
-        s3_prefix=S3_PREFIX,
+        engine=settings.db_engine,
+        targets=settings.backup_targets,
+        compress=settings.compress_backup,
+        backup_days=settings.ssh.backup_days,
+        source_path=settings.source_path,
+        dest_path=settings.ssh.dest_path,
+        s3_bucket=settings.s3.bucket,
+        s3_prefix=settings.s3.prefix,
         host=socket.gethostname(),
         pid=os.getpid(),
     )
-    ping(HEALTHCHECK_URL, "start")
+    ping(settings.healthcheck_url, "start")
 
     storages = []
     exit_code = 0
@@ -68,14 +58,14 @@ def main():
 
     try:
         # Config errors (engine, targets, credentials) fail before the dump
-        dump_strategy = build_dump_strategy(DB_ENGINE)
-        storages = build_storages(BACKUP_TARGETS)
+        dump_strategy = build_dump_strategy(settings.db_engine)
+        storages = build_storages(settings.backup_targets)
 
         run_backup(
-            src_path=SOURCE_PATH,
+            src_path=settings.source_path,
             dump_strategy=dump_strategy,
             storages=storages,
-            compress=COMPRESS_BACKUP,
+            compress=settings.compress_backup,
             summary=summary
         )
 
@@ -109,7 +99,7 @@ def main():
 
         # partial counts as failure, same as the exit code
         ping(
-            HEALTHCHECK_URL,
+            settings.healthcheck_url,
             "" if status == "success" else "fail",
             body=json.dumps(
                 {"run_id": run_id, **result, "error": last_error},

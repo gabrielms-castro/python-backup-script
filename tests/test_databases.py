@@ -1,12 +1,14 @@
 import os
 import sys
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 
 # app modules use sys.path style imports (from logger import ...)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
 os.environ.setdefault('ENVIRONMENT', 'dev')
 
+from config import settings  # noqa: E402
 from databases import build_dump_strategy  # noqa: E402
 from databases.firebird import FirebirdDump  # noqa: E402
 from databases.mysql import MySQLDump  # noqa: E402
@@ -19,6 +21,10 @@ MYSQL_CONFIG = {
     'user': 'backup',
     'password': 'se"cr\\et',
 }
+
+
+def with_mysql(**changes):
+    return replace(settings, mysql=replace(settings.mysql, **changes))
 
 
 class TestPostgresDump(unittest.TestCase):
@@ -137,7 +143,7 @@ class TestBuildDumpStrategy(unittest.TestCase):
         self.assertIsInstance(build_dump_strategy('postgres'), PostgresDump)
         self.assertIsInstance(build_dump_strategy('firebird'), FirebirdDump)
 
-    @patch('databases.MYSQL_DUMP_PATH', None)
+    @patch('databases.settings', with_mysql(dump_path=None))
     def test_mysql_and_mariadb_binaries(self):
         mysql = build_dump_strategy('mysql')
         mariadb = build_dump_strategy('mariadb')
@@ -148,7 +154,10 @@ class TestBuildDumpStrategy(unittest.TestCase):
         self.assertEqual(mariadb.tool, 'mariadb-dump')
         self.assertEqual(mariadb.extra_args, [])
 
-    @patch('databases.MYSQL_DUMP_PATH', '/opt/mariadb/bin/mariadb-dump')
+    @patch(
+        'databases.settings',
+        with_mysql(dump_path='/opt/mariadb/bin/mariadb-dump'),
+    )
     def test_custom_dump_path(self):
         actual = build_dump_strategy('mariadb')
 

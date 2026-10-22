@@ -1,12 +1,14 @@
 import os
 import sys
 import unittest
+from dataclasses import replace
 from unittest.mock import MagicMock, patch
 
 # app modules use sys.path style imports (from logger import ...)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
 os.environ.setdefault('ENVIRONMENT', 'dev')
 
+from config import settings  # noqa: E402
 from storages import build_storages  # noqa: E402
 from storages.s3 import S3Storage  # noqa: E402
 from storages.ssh import SSHStorage  # noqa: E402
@@ -17,6 +19,10 @@ SRC_FILES = [
     {'filepath': f'/srv/backup/{EXISTING}'},
     {'filepath': f'/srv/backup/{FILENAME}'},
 ]
+
+
+def with_s3(**changes):
+    return replace(settings, s3=replace(settings.s3, **changes))
 
 
 def make_s3_storage():
@@ -96,13 +102,16 @@ class TestBuildStorages(unittest.TestCase):
     def test_empty_targets(self):
         self.assertRaises(ValueError, build_storages, [])
 
-    @patch('storages.AWS_ACCESS_KEY_ID', None)
+    @patch('storages.settings', with_s3(access_key_id=None))
     def test_s3_without_credentials(self):
         self.assertRaises(Exception, build_storages, ['s3'])
 
-    @patch('storages.S3_BUCKET', 'bucket')
-    @patch('storages.AWS_ACCESS_KEY_ID', 'key')
-    @patch('storages.AWS_SECRET_ACCESS_KEY', 'secret')
+    @patch(
+        'storages.settings',
+        with_s3(
+            bucket='bucket', access_key_id='key', secret_access_key='secret'
+        ),
+    )
     def test_builds_in_target_order(self):
         actual = build_storages(['s3', 'ssh'])
 
