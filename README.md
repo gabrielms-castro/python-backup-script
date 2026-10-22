@@ -467,3 +467,21 @@ psql -h localhost -U <usuario> -d <banco> -f backup_20260101_020000.sql
 gunzip backup_20260101_020000.sql.gz
 mysql -h localhost -u <usuario> -p <banco> < backup_20260101_020000.sql   # ou: mariadb ...
 ```
+
+## Adicionando um banco ou um storage
+
+O dump e os destinos ficam atrás de interfaces, então um banco ou destino novo não mexe no fluxo
+(`app/backup.py`) nem no `main.py`:
+
+- **Banco** (Strategy, `app/databases/`): crie uma classe que herda de `DumpStrategy` (`base.py`) com `tool`,
+  `extension` e `dump(output_file)`, usando `run_dump_command` de `generate_backup.py` para rodar a ferramenta
+  (ele já loga `dump.ok|failed` e apaga o arquivo parcial). Registre o valor de `DB_ENGINE` em `DUMP_STRATEGIES`
+  (`databases/__init__.py`) e adicione as variáveis em `config.py`.
+- **Storage** (Adapter, `app/storages/`): crie uma classe que herda de `StorageAdapter` (`base.py`) com `name`,
+  `connect()`, `upload(src_files)` (retorna os nomes confirmados no destino e pula os que já existem) e, se o
+  script controlar a retenção, `apply_retention()`; `close()` libera a conexão. Registre o nome usado em
+  `BACKUP_TARGETS` em `STORAGES` (`storages/__init__.py`), validando ali as variáveis obrigatórias.
+
+Exemplo: Google Cloud Storage seria `storages/gcs.py` (`GCSStorage`, com `google-cloud-storage` no
+`pyproject.toml`), variáveis `GCS_*` em `config.py` e `"gcs": _build_gcs` em `STORAGES`, e passaria a valer
+`BACKUP_TARGETS=ssh,gcs`.
