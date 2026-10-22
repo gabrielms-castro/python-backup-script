@@ -11,66 +11,13 @@ from utils import get_file_size
 
 logger = logging.getLogger(__name__)
 
-# gbak/pg_dump run in verbose mode; only the end of stderr is useful on failure
+# dump tools run in verbose mode; only the end of stderr is useful on failure
 STDERR_TAIL_CHARS = 2000
 
-BACKUP_EXTENSIONS = {
-    "postgres": ".sql",
-    "firebird": ".fbk",
-}
 
-
-def pg_dump_database(
-    host: str,
-    port: int,
-    database: str,
-    user: str,
-    password: str,
-    output_file: str
+def run_dump_command(
+    tool: str, cmd: list, env: dict, output_file: str
 ) -> bool:
-
-    cmd = [
-        "pg_dump",
-        f"--host={host}",
-        f"--port={port}",
-        f"--username={user}",
-        f"--dbname={database}",
-        f"--file={output_file}",
-        "--format=plain",
-        "--verbose"
-    ]
-
-    env = {**os.environ, "PGPASSWORD": password or ""}
-
-    return _run_dump_command("pg_dump", cmd, env, output_file)
-
-
-def gbak_backup_database(
-    gbak_path: str,
-    host: str,
-    port: int,
-    database: str,
-    user: str,
-    password: str,
-    output_file: str
-) -> bool:
-
-    cmd = [
-        gbak_path,
-        "-b",
-        "-v",
-        "-g",
-        f"{host}/{port}:{database}",
-        output_file
-    ]
-
-    # Credentials via env so the password does not show up in `ps`
-    env = {**os.environ, "ISC_USER": user or "", "ISC_PASSWORD": password or ""}
-
-    return _run_dump_command("gbak", cmd, env, output_file)
-
-
-def _run_dump_command(tool: str, cmd: list, env: dict, output_file: str) -> bool:
     started = time.monotonic()
 
     try:
@@ -109,7 +56,7 @@ def _run_dump_command(tool: str, cmd: list, env: dict, output_file: str) -> bool
             duration_s=round(time.monotonic() - started, 3)
         )
 
-    _remove_partial_file(output_file)
+    remove_partial_file(output_file)
     return False
 
 
@@ -137,34 +84,25 @@ def compress_file(filepath: str) -> Optional[str]:
             logger, "compress.failed", logging.ERROR, exc_info=True,
             file=os.path.basename(filepath)
         )
-        _remove_partial_file(gz_filepath)
+        remove_partial_file(gz_filepath)
         return None
 
 
 def generate_backup(
-    engine: str,
+    strategy,
     output_dir: str,
     timestamp: str,
-    db_config: dict,
     compress: bool = True
 ) -> Optional[str]:
     """
-    Generates the database backup file for the given engine.
+    Generates the database backup file with the engine's dump strategy.
     Returns the final file path or None if the backup failed.
     """
-    if engine not in BACKUP_EXTENSIONS:
-        raise ValueError(f"Unsupported DB_ENGINE: '{engine}'")
-
     output_file = os.path.join(
-        str(output_dir), f"backup_{timestamp}{BACKUP_EXTENSIONS[engine]}"
+        str(output_dir), f"backup_{timestamp}{strategy.extension}"
     )
 
-    if engine == "postgres":
-        success = pg_dump_database(output_file=output_file, **db_config)
-    else:
-        success = gbak_backup_database(output_file=output_file, **db_config)
-
-    if not success:
+    if not strategy.dump(output_file):
         return None
 
     if compress:
@@ -173,7 +111,7 @@ def generate_backup(
     return output_file
 
 
-def _remove_partial_file(filepath: str) -> None:
+def remove_partial_file(filepath: str) -> None:
     try:
         if os.path.isfile(filepath):
             os.remove(filepath)

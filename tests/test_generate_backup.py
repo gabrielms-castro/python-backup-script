@@ -9,51 +9,29 @@ from unittest.mock import patch
 # app modules use sys.path style imports (from logger import ...)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
 
-from app.generate_backup import (  # noqa: E402
+from generate_backup import (  # noqa: E402
     compress_file,
-    gbak_backup_database,
     generate_backup,
+    run_dump_command,
 )
 
-FB_CONFIG = {
-    'gbak_path': '/opt/firebird/bin/gbak',
-    'host': 'localhost',
-    'port': '3050',
-    'database': '/data/db.fdb',
-    'user': 'SYSDBA',
-    'password': 'masterkey',
-}
+
+class FakeStrategy:
+    tool = 'fake_dump'
+    extension = '.fbk'
+
+    def __init__(self, success=True):
+        self.success = success
+        self.output_files = []
+
+    def dump(self, output_file):
+        self.output_files.append(output_file)
+        return self.success
 
 
-class TestGbakBackupDatabase(unittest.TestCase):
-    @patch('app.generate_backup.subprocess.run')
-    def test_gbak_command_and_credentials(self, mock_run):
-        """
-        Credentials must go through env, never through the command line
-        """
-        actual = gbak_backup_database(output_file='/tmp/out.fbk', **FB_CONFIG)
-
-        self.assertTrue(actual)
-        cmd = mock_run.call_args.args[0]
-        env = mock_run.call_args.kwargs['env']
-        self.assertEqual(
-            cmd,
-            [
-                '/opt/firebird/bin/gbak',
-                '-b',
-                '-v',
-                '-g',
-                'localhost/3050:/data/db.fdb',
-                '/tmp/out.fbk',
-            ],
-        )
-        self.assertNotIn('masterkey', cmd)
-        self.assertEqual(env['ISC_USER'], 'SYSDBA')
-        self.assertEqual(env['ISC_PASSWORD'], 'masterkey')
-        self.assertIn('PATH', env)
-
-    @patch('app.generate_backup.subprocess.run')
-    def test_gbak_failure_removes_partial_file(self, mock_run):
+class TestRunDumpCommand(unittest.TestCase):
+    @patch('generate_backup.subprocess.run')
+    def test_failure_removes_partial_file(self, mock_run):
         mock_run.side_effect = subprocess.CalledProcessError(
             1, 'gbak', stderr='boom'
         )
@@ -63,9 +41,7 @@ class TestGbakBackupDatabase(unittest.TestCase):
             with open(output_file, 'w') as f:
                 f.write('partial')
 
-            actual = gbak_backup_database(
-                output_file=output_file, **FB_CONFIG
-            )
+            actual = run_dump_command('gbak', ['gbak'], {}, output_file)
 
             self.assertFalse(actual)
             self.assertFalse(os.path.exists(output_file))
@@ -88,49 +64,35 @@ class TestCompressFile(unittest.TestCase):
 
 
 class TestGenerateBackup(unittest.TestCase):
-    @patch('app.generate_backup.gbak_backup_database', return_value=True)
-    def test_firebird_extension(self, mock_gbak):
+    def test_uses_strategy_extension(self):
+        strategy = FakeStrategy()
+
         actual = generate_backup(
-            engine='firebird',
+            strategy=strategy,
             output_dir='/srv/backup',
             timestamp='20260111_151836',
-            db_config=FB_CONFIG,
             compress=False,
         )
 
         self.assertEqual(actual, '/srv/backup/backup_20260111_151836.fbk')
-        mock_gbak.assert_called_once()
+        self.assertEqual(strategy.output_files, [actual])
 
-    @patch('app.generate_backup.pg_dump_database', return_value=True)
-    def test_postgres_extension(self, mock_pg_dump):
+    @patch('generate_backup.compress_file', side_effect=lambda f: f'{f}.gz')
+    def test_compress(self, mock_compress):
         actual = generate_backup(
-            engine='postgres',
+            strategy=FakeStrategy(),
             output_dir='/srv/backup',
             timestamp='20260111_151836',
-            db_config={},
-            compress=False,
         )
 
-        self.assertEqual(actual, '/srv/backup/backup_20260111_151836.sql')
-        mock_pg_dump.assert_called_once()
+        self.assertEqual(actual, '/srv/backup/backup_20260111_151836.fbk.gz')
+        mock_compress.assert_called_once()
 
-    @patch('app.generate_backup.gbak_backup_database', return_value=False)
-    def test_failed_backup_returns_none(self, mock_gbak):
+    def test_failed_backup_returns_none(self):
         actual = generate_backup(
-            engine='firebird',
+            strategy=FakeStrategy(success=False),
             output_dir='/srv/backup',
             timestamp='20260111_151836',
-            db_config=FB_CONFIG,
         )
 
         self.assertIsNone(actual)
-
-    def test_invalid_engine(self):
-        self.assertRaises(
-            ValueError,
-            generate_backup,
-            engine='mysql',
-            output_dir='/srv/backup',
-            timestamp='20260111_151836',
-            db_config={},
-        )

@@ -28,17 +28,14 @@ SSH_PORT = _env("SSH_PORT") or _env("PORT", "22")
 PUB_KEY_PATH = _env("PUB_KEY_PATH")
 
 # Backup settings
-DB_ENGINE = _env("DB_ENGINE", "postgres").lower()  # postgres | firebird
+# postgres | firebird (see databases.DUMP_STRATEGIES)
+DB_ENGINE = _env("DB_ENGINE", "postgres").lower()
 COMPRESS_BACKUP = _env("COMPRESS_BACKUP", "true").lower() == "true"
 BACKUP_TARGETS = [
     target.strip()
     for target in _env("BACKUP_TARGETS", "ssh").lower().split(",")
     if target.strip()
-]  # ssh | s3 | ssh,s3
-
-_invalid_targets = set(BACKUP_TARGETS) - {"ssh", "s3"}
-if _invalid_targets or not BACKUP_TARGETS:
-    raise ValueError(f"Invalid BACKUP_TARGETS: {_env('BACKUP_TARGETS')}")
+]  # ssh | s3 | ssh,s3, validated by storages.build_storages
 
 # Monitoring (Healthchecks.io); empty = disabled
 HEALTHCHECK_URL = _env("HEALTHCHECK_URL")

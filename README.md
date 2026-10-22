@@ -292,8 +292,9 @@ Configuração do check no Healthchecks:
 A notificação nunca interrompe o backup: se o Healthchecks estiver fora do ar, o log registra
 `healthcheck.ping.failed` (WARNING) e o script segue. A URL não é gravada no log, porque o UUID é o que autoriza o ping.
 
-> Erros de configuração detectados ao carregar o `.env` (ex.: `BACKUP_TARGETS` inválido) acontecem antes do
-> primeiro ping e não geram `/fail`. O Healthchecks avisa quando o prazo do ping vencer.
+> `DB_ENGINE` ou `BACKUP_TARGETS` inválidos e credenciais do S3 faltando são detectados depois do ping de início
+> e antes do dump: geram `run.failed` e `/fail`. Erros ao carregar o `.env` em si (ex.: `SOURCE_PATH` vazio
+> em `prod`) acontecem antes do primeiro ping e não geram `/fail`; o Healthchecks avisa quando o prazo vencer.
 
 ## Deploy
 

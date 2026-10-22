@@ -20,9 +20,6 @@ sys.path.insert(0, application_path)
 
 from backup import run_backup
 from config import (
-    AWS_ACCESS_KEY_ID,
-    AWS_REGION,
-    AWS_SECRET_ACCESS_KEY,
     BACKUP_DAYS,
     BACKUP_TARGETS,
     COMPRESS_BACKUP,
@@ -31,18 +28,14 @@ from config import (
     HEALTHCHECK_URL,
     LOGS_DIR,
     NOW,
-    PUB_KEY_PATH,
     S3_BUCKET,
     S3_PREFIX,
     SOURCE_PATH,
-    SSH_PORT,
-    SSH_SERVER,
-    SSH_USER,
 )
+from databases import build_dump_strategy
 from healthcheck import ping
 from logger import log_event, setup_logging
-from s3_client import create_s3_client
-from ssh_client import create_ssh_client
+from storages import build_storages
 
 logger = logging.getLogger("main")
 
@@ -68,47 +61,21 @@ def main():
     )
     ping(HEALTHCHECK_URL, "start")
 
-    ssh_client = None
-    s3_client = None
+    storages = []
     exit_code = 0
     summary = {}
     last_error = None
 
     try:
-
-        if "ssh" in BACKUP_TARGETS:
-            try:
-                ssh_client = create_ssh_client(
-                    server=SSH_SERVER,
-                    port=SSH_PORT,
-                    user=SSH_USER,
-                    # password=SSH_PASSWORD,
-                    key_filepath=PUB_KEY_PATH
-                )
-            except Exception:
-                # Keeps going with the other targets; run_backup marks SSH as failed
-                ssh_client = None
-
-        if "s3" in BACKUP_TARGETS:
-            if not (S3_BUCKET and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY):
-                raise Exception(
-                    "S3_BUCKET, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY "
-                    "are required when BACKUP_TARGETS contains s3."
-                )
-
-            s3_client = create_s3_client(
-                access_key=AWS_ACCESS_KEY_ID,
-                secret_key=AWS_SECRET_ACCESS_KEY,
-                region=AWS_REGION
-            )
+        # Config errors (engine, targets, credentials) fail before the dump
+        dump_strategy = build_dump_strategy(DB_ENGINE)
+        storages = build_storages(BACKUP_TARGETS)
 
         run_backup(
             src_path=SOURCE_PATH,
-            backup_days=BACKUP_DAYS,
-            targets=BACKUP_TARGETS,
-            ssh_client=ssh_client,
-            dest_path=DEST_PATH,
-            s3_client=s3_client,
+            dump_strategy=dump_strategy,
+            storages=storages,
+            compress=COMPRESS_BACKUP,
             summary=summary
         )
 
@@ -118,9 +85,8 @@ def main():
         last_error = str(exc)
 
     finally:
-        if ssh_client:
-            ssh_client.close()
-            log_event(logger, "ssh.connection.closed")
+        for storage in storages:
+            storage.close()
 
         status = get_run_status(exit_code, summary)
         result = {
@@ -134,6 +100,7 @@ def main():
             "errors": error_counter.errors,
             "warnings": error_counter.warnings,
         }
+        
         log_event(
             logger, "run.finished",
             logging.INFO if status == "success" else logging.ERROR,
