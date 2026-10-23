@@ -17,6 +17,50 @@ Engines suportados (variável `DB_ENGINE`):
 
 Com `COMPRESS_BACKUP=true` (padrão), o arquivo é comprimido com gzip antes do envio.
 
+## Arquitetura
+
+O script roda no servidor do banco, disparado pelo cron, e cada execução é independente: gera o dump,
+envia para os destinos e termina. Não há serviço rodando em segundo plano nem estado guardado entre
+execuções além dos arquivos em `SOURCE_PATH` (o que não foi enviado a todos os destinos fica lá e é
+reenviado na próxima execução).
+
+![Arquitetura do Backup Script](docs/arquitetura.png)
+
+Fonte editável no Whimsical: [Arquitetura do Backup Script](https://whimsical.com/Su7Aqx5jonLTd2jTQXHtSm).
+Ao alterar o board, exporte a imagem de novo para `docs/arquitetura.png`.
+
+### Fluxo de uma execução
+
+1. `main.py` gera o `run_id`, configura o log, registra `run.started` e envia `start` ao Healthchecks.
+2. `build_dump_strategy` e `build_storages` montam a estratégia de dump do `DB_ENGINE` e um adapter por
+   destino de `BACKUP_TARGETS`. Erro de configuração aqui interrompe a execução antes do dump.
+3. `run_backup` (`backup.py`) chama `generate_backup`, que roda a ferramenta de dump e comprime o arquivo.
+   Se falhar, o arquivo parcial é removido.
+4. Para cada destino: `connect()` → `upload()` → `apply_retention()`. Arquivos que já estão no destino são
+   pulados. A falha de um destino não impede os outros.
+5. Só os arquivos confirmados em **todos** os destinos são apagados de `SOURCE_PATH`.
+6. As conexões são fechadas, `run.finished` registra o resumo e o Healthchecks recebe `ok` ou `fail`.
+   O status é `success`, `partial` ou `failed` (ver [Logs e auditoria](#logs-e-auditoria)).
+
+### Onde fica cada coisa
+
+| Módulo                     | Responsabilidade |
+|----------------------------|------------------|
+| `app/main.py`              | Ponto de entrada: monta as peças, trata erros, define status e exit code. |
+| `app/config.py`            | Lê o `.env` e expõe `settings` (dataclass congelada, com um bloco por banco/destino). |
+| `app/backup.py`            | Orquestra gerar → enviar → limpar. |
+| `app/generate_backup.py`   | Roda a ferramenta de dump (`run_dump_command`) e comprime com gzip. |
+| `app/databases/`           | Uma `DumpStrategy` por engine e a fábrica `build_dump_strategy`. |
+| `app/storages/`            | Um `StorageAdapter` por destino e a fábrica `build_storages`. |
+| `app/ssh_client.py`, `app/s3_client.py` | Criação dos clientes e operações de baixo nível (paramiko, boto3). |
+| `app/directory_cleaner.py` | Limpeza local (`SOURCE_PATH`) e retenção remota no servidor SSH. |
+| `app/logger.py`            | Log estruturado em JSONL + saída legível no `stderr`. |
+| `app/healthcheck.py`       | Ping ao Healthchecks.io. Nunca lança exceção. |
+| `app/utils.py`             | Datas a partir do nome do arquivo, tamanhos, buscas no servidor remoto. |
+| `tests/`                   | Testes por módulo, no padrão `test_<módulo>.py` (`uv run task test`). |
+
+Para incluir um banco ou um destino novo, veja [Adicionando um banco ou um storage](#adicionando-um-banco-ou-um-storage).
+
 ## Configuração
 
 Copie `.env.example` para `.env` e preencha as variáveis. Quais blocos você precisa preencher
